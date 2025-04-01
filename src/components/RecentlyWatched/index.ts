@@ -1,0 +1,1 @@
+export { RecentlyWatched } from './RecentlyWatched';

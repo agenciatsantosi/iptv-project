@@ -1,0 +1,109 @@
+/* Estilos globais para o player de vídeo */
+.plyr__container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background-color: #000;
+  overflow: hidden;
+}
+
+.plyr__video-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #000;
+  overflow: hidden;
+}
+
+.plyr__video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  display: block;
+}
+
+/* Estilos específicos do Plyr */
+.plyr {
+  height: 100%;
+  width: 100%;
+}
+
+.plyr--video {
+  height: 100%;
+  background: #000;
+}
+
+.plyr--video .plyr__video-wrapper {
+  height: 100%;
+  width: 100%;
+  background: #000;
+}
+
+.plyr--video .plyr__video-wrapper video {
+  height: 100%;
+  width: 100%;
+}
+
+.plyr--video .plyr__controls {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.7));
+}
+
+.plyr--video .plyr__control--overlaid {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.plyr--video .plyr__control--overlaid:hover {
+  background: rgba(0, 0, 0, 0.9);
+}
+
+/* Correções para tela cheia */
+.plyr--fullscreen-active {
+  height: 100%;
+  width: 100%;
+}
+
+.plyr--fullscreen-active .plyr__video-wrapper {
+  height: 100%;
+  width: 100%;
+}
+
+.plyr--fullscreen-active video {
+  height: 100%;
+  width: 100%;
+}
+
+/* Ajustes para diferentes proporções */
+.plyr--video.plyr--4:3 .plyr__video-wrapper {
+  padding-top: 75%;
+}
+
+.plyr--video.plyr--16:9 .plyr__video-wrapper {
+  padding-top: 56.25%;
+}
+
+/* Ajustes para controles */
+.plyr__controls button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.plyr__progress__buffer {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.plyr__time {
+  font-size: 14px;
+}
+
+/* Ajustes para dispositivos móveis */
+@media (max-width: 768px) {
+  .plyr__time {
+    font-size: 12px;
+  }
+  
+  .plyr__controls {
+    padding: 5px;
+  }
+}
