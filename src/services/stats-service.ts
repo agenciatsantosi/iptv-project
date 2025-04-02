@@ -94,7 +94,9 @@ export async function getSystemStats(): Promise<SystemStats> {
         const parsedData = JSON.parse(storageData);
         console.log('Estrutura dos dados armazenados:', Object.keys(parsedData));
         
-        if (parsedData.state) {
+        // Verificar diferentes estruturas possíveis do localStorage
+        // Estrutura 1: state contém diretamente os arrays
+        if (parsedData.state && typeof parsedData.state === 'object') {
           console.log('Estado encontrado, verificando arrays de conteúdo...');
           console.log('Chaves do estado:', Object.keys(parsedData.state));
           
@@ -102,46 +104,86 @@ export async function getSystemStats(): Promise<SystemStats> {
           if (Array.isArray(parsedData.state.movies)) {
             loadedMovies = parsedData.state.movies.length;
             console.log(`Array de filmes encontrado com ${loadedMovies} itens`);
-          } else {
-            console.warn('O campo movies não é um array ou não existe:', parsedData.state.movies);
-          }
+          } 
           
           if (Array.isArray(parsedData.state.series)) {
             loadedSeries = parsedData.state.series.length;
             console.log(`Array de séries encontrado com ${loadedSeries} itens`);
-          } else {
-            console.warn('O campo series não é um array ou não existe:', parsedData.state.series);
           }
           
           if (Array.isArray(parsedData.state.live)) {
             loadedLive = parsedData.state.live.length;
             console.log(`Array de canais ao vivo encontrado com ${loadedLive} itens`);
-          } else {
-            console.warn('O campo live não é um array ou não existe:', parsedData.state.live);
           }
-        } else {
-          console.warn('Nenhum estado encontrado nos dados armazenados');
+        }
+        
+        // Se não encontrou os arrays no formato esperado, tenta outros formatos
+        if (loadedMovies === 0 && loadedSeries === 0 && loadedLive === 0) {
+          // Tentar encontrar em outras estruturas possíveis
+          console.log('Tentando estruturas alternativas...');
+          
+          // Verificar se existe uma propriedade que contém os arrays
+          const stateKeys = Object.keys(parsedData.state || {});
+          for (const key of stateKeys) {
+            const stateValue = parsedData.state[key];
+            
+            // Procurar por propriedades que podem conter os arrays
+            if (typeof stateValue === 'object' && stateValue !== null) {
+              if (Array.isArray(stateValue.movies)) {
+                loadedMovies = stateValue.movies.length;
+                console.log(`Array de filmes encontrado em ${key} com ${loadedMovies} itens`);
+              }
+              
+              if (Array.isArray(stateValue.series)) {
+                loadedSeries = stateValue.series.length;
+                console.log(`Array de séries encontrado em ${key} com ${loadedSeries} itens`);
+              }
+              
+              if (Array.isArray(stateValue.live)) {
+                loadedLive = stateValue.live.length;
+                console.log(`Array de canais ao vivo encontrado em ${key} com ${loadedLive} itens`);
+              }
+            }
+          }
+        }
+        
+        // Verificar se existe um contador de itens em vez dos arrays completos
+        if (loadedMovies === 0 && typeof parsedData.state?.totalMovies === 'number') {
+          loadedMovies = parsedData.state.totalMovies;
+          console.log(`Contador de filmes encontrado: ${loadedMovies}`);
+        }
+        
+        if (loadedSeries === 0 && typeof parsedData.state?.totalSeries === 'number') {
+          loadedSeries = parsedData.state.totalSeries;
+          console.log(`Contador de séries encontrado: ${loadedSeries}`);
+        }
+        
+        if (loadedLive === 0 && typeof parsedData.state?.totalLive === 'number') {
+          loadedLive = parsedData.state.totalLive;
+          console.log(`Contador de canais ao vivo encontrado: ${loadedLive}`);
         }
       } catch (e) {
         console.error('Erro ao analisar dados do localStorage:', e);
       }
     } else {
       console.warn('Nenhum dado encontrado no localStorage para iptv-storage');
-      
-      // Tentar obter diretamente do store (alternativa)
+    }
+    
+    // Se não conseguiu obter do localStorage, tenta obter do sessionStorage
+    if (loadedMovies === 0 && loadedSeries === 0 && loadedLive === 0) {
       try {
-        console.log('Tentando obter dados diretamente do store...');
-        // Não podemos usar hooks fora de componentes React, então vamos usar uma abordagem alternativa
-        // Verificar se há uma variável global com o estado
-        const globalState = (window as any).__IPTV_STORE_STATE__;
-        if (globalState) {
-          console.log('Estado global encontrado:', globalState);
-          loadedMovies = Array.isArray(globalState.movies) ? globalState.movies.length : 0;
-          loadedSeries = Array.isArray(globalState.series) ? globalState.series.length : 0;
-          loadedLive = Array.isArray(globalState.live) ? globalState.live.length : 0;
+        console.log('Tentando obter dados do sessionStorage...');
+        const sessionData = sessionStorage.getItem('iptv-session-stats');
+        
+        if (sessionData) {
+          const sessionStats = JSON.parse(sessionData);
+          loadedMovies = sessionStats.movies || 0;
+          loadedSeries = sessionStats.series || 0;
+          loadedLive = sessionStats.live || 0;
+          console.log('Dados obtidos do sessionStorage:', { loadedMovies, loadedSeries, loadedLive });
         }
       } catch (e) {
-        console.error('Erro ao tentar acessar estado global:', e);
+        console.error('Erro ao obter dados do sessionStorage:', e);
       }
     }
 

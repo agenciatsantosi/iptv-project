@@ -11,7 +11,7 @@ import { IoCheckmarkCircle } from 'react-icons/io5';
 import { ContentReactions } from '../components/ContentReactions';
 import { Channel } from '../types/iptv';
 import { TMDBSeries } from '../types/tmdb';
-import { loadSeriesEpisodes } from '../services/channel-sync';
+import { loadSeriesEpisodes, findSeriesBySlug } from '../services/channel-sync';
 
 type TabType = 'episodes' | 'more' | 'similar';
 
@@ -40,75 +40,72 @@ interface TMDBMetadata {
 
 export function SeriesDetails() {
   const { slug } = useParams();
-  const { series } = useIPTVStore();
   const { isWatched } = useWatchHistory();
   const [activeTab, setActiveTab] = useState<TabType>('episodes');
   const [episodes, setEpisodes] = useState<Channel[]>([]);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [currentSeries, setCurrentSeries] = useState<Channel | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Encontra a série e seus episódios
-  const currentSeries = useMemo(() => {
-    console.log('SeriesDetails: Iniciando busca', {
-      slug,
-      totalSeries: series?.length
-    });
-
-    if (!slug || !series?.length) {
-      console.log('SeriesDetails: Sem slug ou série', { slug, totalSeries: series?.length });
-      return null;
-    }
-
-    // Normaliza o slug recebido
-    const normalizedSlug = slug.toLowerCase().replace(/[^\w-]+/g, '');
-    console.log('SeriesDetails: Slug normalizado:', normalizedSlug);
-    
-    // Encontra a série atual pelo slug
-    const found = series.find(s => {
-      const seriesTitle = s.title || s.name || '';
-      // Normaliza o título da série da mesma forma que o slug
-      const seriesSlug = seriesTitle
-        .toLowerCase()
-        .replace(/[^\w\s-]+/g, '')
-        .trim()
-        .replace(/\s+/g, '-');
-
-      console.log('SeriesDetails: Comparando série', {
-        titulo: seriesTitle,
-        seriesSlug,
-        match: seriesSlug === normalizedSlug
-      });
-
-      return seriesSlug === normalizedSlug;
-    });
-
-    console.log('SeriesDetails: Série encontrada', found ? {
-      id: found.id,
-      titulo: found.title || found.name,
-      grupo: found.group
-    } : 'Nenhuma série encontrada');
-
-    return found;
-  }, [slug, series]);
-
-  // Carrega os episódios quando a série é encontrada
+  // Carrega a série pelo slug diretamente do banco de dados
   useEffect(() => {
-    async function loadEpisodes() {
-      if (currentSeries) {
-        try {
-          const seriesName = currentSeries.title || currentSeries.name;
-          console.log('Carregando episódios para série:', seriesName);
-          const seriesEpisodes = await loadSeriesEpisodes(seriesName);
-          console.log('Episódios encontrados:', seriesEpisodes?.length);
-          setEpisodes(seriesEpisodes || []);
-        } catch (error) {
-          console.error('Erro ao carregar episódios:', error);
+    async function loadSeriesData() {
+      if (!slug) {
+        setError('Série não encontrada');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        console.log('SeriesDetails: Buscando série pelo slug:', slug);
+        
+        // Busca a série diretamente do banco de dados
+        const { series: foundSeries, error: seriesError } = await findSeriesBySlug(slug);
+        
+        if (seriesError || !foundSeries) {
+          console.error('SeriesDetails: Erro ao buscar série:', seriesError);
+          setError(seriesError || 'Série não encontrada');
+          setLoading(false);
+          return;
         }
+        
+        console.log('SeriesDetails: Série encontrada:', foundSeries);
+        setCurrentSeries(foundSeries);
+        
+        // Carrega os episódios
+        const seriesName = foundSeries.title || foundSeries.name;
+        console.log('SeriesDetails: Carregando episódios para série:', seriesName);
+        const seriesEpisodes = await loadSeriesEpisodes(seriesName);
+        console.log('SeriesDetails: Episódios carregados:', seriesEpisodes?.length);
+        
+        if (seriesEpisodes && seriesEpisodes.length > 0) {
+          setEpisodes(seriesEpisodes);
+          
+          // Identifica as temporadas disponíveis
+          const seasons = [...new Set(seriesEpisodes
+            .map(ep => ep.season_number || 1)
+            .filter(Boolean)
+          )].sort((a, b) => a - b);
+          
+          // Seleciona a primeira temporada por padrão
+          if (seasons.length > 0 && selectedSeason === null) {
+            setSelectedSeason(seasons[0]);
+          }
+        }
+        
+        setLoading(false);
+      } catch (err) {
+        console.error('SeriesDetails: Erro ao carregar dados da série:', err);
+        setError('Erro ao carregar dados da série');
+        setLoading(false);
       }
     }
-
-    loadEpisodes();
-  }, [currentSeries]);
+    
+    loadSeriesData();
+  }, [slug]);
 
   // Agrupa episódios por temporada
   const seasonEpisodes = useMemo(() => {
@@ -160,10 +157,35 @@ export function SeriesDetails() {
   }, [episodes, selectedSeason]);
 
   // Busca metadados do TMDB
-  const { data: metadata, loading } = useTMDB(
+  const { data: metadata, loading: metadataLoading } = useTMDB(
     currentSeries?.title || currentSeries?.name || '', 
     'tv'
   ) as { data: TMDBMetadata | null, loading: boolean };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-4 text-white">{error}</h2>
+          <Link 
+            to="/series" 
+            className="inline-flex items-center gap-2 text-red-600 hover:text-red-500"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Voltar para lista de séries</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentSeries) {
     return (
@@ -178,14 +200,6 @@ export function SeriesDetails() {
             <span>Voltar para lista de séries</span>
           </Link>
         </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <LoadingSpinner size="lg" />
       </div>
     );
   }

@@ -16,6 +16,7 @@ interface SeriesCardProps {
     name: string;
     title?: string;
     episodes: Channel[];
+    seasons: number;
     group?: string;
     group_title?: string;
     logo?: string | null;
@@ -26,6 +27,10 @@ export function SeriesCard({ series }: SeriesCardProps) {
   const { user } = useAuthContext();
   const { toggleFavorite, favorites } = useIPTVStore();
   const isFavorite = favorites.includes(series.id);
+  
+  // Obter o número de episódios e temporadas
+  const episodeCount = series.episodes?.length || 0;
+  const seasonCount = series.seasons || 0;
 
   return (
     <div className="group relative">
@@ -47,15 +52,30 @@ export function SeriesCard({ series }: SeriesCardProps) {
               <FiPlay className="w-12 h-12 text-white opacity-0 group-hover:opacity-100 transition-all duration-200" />
             </div>
           </div>
+          
+          {/* Badge com número de temporadas no canto superior esquerdo */}
+          {seasonCount > 0 && (
+            <Badge 
+              colorScheme="purple" 
+              className="absolute top-2 left-2 z-10 bg-purple-600 text-white px-2 py-1 rounded-md"
+            >
+              {seasonCount} {seasonCount === 1 ? 'temporada' : 'temporadas'}
+            </Badge>
+          )}
+          
+          {/* Badge com número de episódios no canto inferior esquerdo */}
+          {episodeCount > 0 && (
+            <Badge 
+              colorScheme="blue" 
+              className="absolute bottom-2 left-2 z-10 bg-blue-600 text-white px-2 py-1 rounded-md"
+            >
+              {episodeCount} {episodeCount === 1 ? 'episódio' : 'episódios'}
+            </Badge>
+          )}
         </div>
         <h3 className="mt-2 text-lg font-semibold truncate">{series.title || series.name}</h3>
         {series.group_title && (
           <p className="text-sm text-gray-400 truncate">{series.group_title}</p>
-        )}
-        {series.episodes?.length > 0 && (
-          <Badge colorScheme="purple" mt={1}>
-            {series.episodes.length} episódios
-          </Badge>
         )}
       </Link>
 

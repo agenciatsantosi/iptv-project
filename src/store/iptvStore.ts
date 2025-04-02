@@ -100,46 +100,46 @@ export const useIPTVStore = create<IPTVState>()(
             exemplos: classified.exemplos
           });
 
-          set(state => {
-            // Remover duplicatas baseado no nome do canal
-            const uniqueMovies = [...state.movies, ...classified.movies]
-              .filter((movie, index, self) => 
-                index === self.findIndex(m => m.name === movie.name)
-              );
-
-            const uniqueSeries = [...state.series, ...classified.series]
-              .filter((serie, index, self) => 
-                index === self.findIndex(s => s.name === serie.name)
-              );
-
-            const uniqueLive = [...state.live, ...classified.live]
-              .filter((live, index, self) => 
-                index === self.findIndex(l => l.name === live.name)
-              );
-
-            console.log('Estado atualizado:', {
-              movies: uniqueMovies.length,
-              series: uniqueSeries.length,
-              live: uniqueLive.length,
-              total
-            });
-
-            return {
-              movies: uniqueMovies,
-              series: uniqueSeries,
-              live: uniqueLive,
-              loading: false,
-              currentPage: currentPage + 1,
-              hasMore: channels.length === PAGE_SIZE,
-              totalChannels: total || 0,
-              error: null
+          // Atualizar o estado com os novos canais
+          const newState = {
+            movies: [...get().movies, ...classified.movies],
+            series: [...get().series, ...classified.series],
+            live: [...get().live, ...classified.live],
+            currentPage: currentPage + 1,
+            loading: false,
+            hasMore: channels.length === PAGE_SIZE,
+            totalChannels: total,
+            error: null
+          };
+          
+          set(newState);
+          
+          // Salvar estatísticas no sessionStorage para acesso fácil
+          try {
+            const stats = {
+              movies: newState.movies.length,
+              series: newState.series.length,
+              live: newState.live.length,
+              total: newState.movies.length + newState.series.length + newState.live.length,
+              timestamp: Date.now()
             };
+            sessionStorage.setItem('iptv-session-stats', JSON.stringify(stats));
+            console.log('Estatísticas salvas no sessionStorage:', stats);
+          } catch (statsError) {
+            console.error('Erro ao salvar estatísticas no sessionStorage:', statsError);
+          }
+          
+          console.log('Estado atualizado:', {
+            movies: newState.movies.length,
+            series: newState.series.length,
+            live: newState.live.length,
+            total
           });
         } catch (error) {
-          console.error('Erro ao carregar canais:', error);
+          console.error('Erro ao carregar próxima página:', error);
           set({ 
-            error: 'Erro ao carregar canais',
-            loading: false
+            loading: false,
+            error: error instanceof Error ? error.message : 'Erro desconhecido'
           });
         }
       },

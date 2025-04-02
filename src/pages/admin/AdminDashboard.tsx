@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Film, Tv, Radio, Database, Server, Percent } from 'lucide-react';
+import { Film, Tv, Radio, Database, Server, Percent } from 'lucide-react';
 import { useIPTVStore } from '../../store/iptvStore';
 import { getSystemStats, SystemStats } from '../../services/stats-service';
 
 export function AdminDashboard() {
-  const { movies, series, live, loadNextPage } = useIPTVStore();
+  const { movies, series, live, loadNextPage, syncFromCloud } = useIPTVStore();
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingInitial, setLoadingInitial] = useState(false);
 
   useEffect(() => {
     async function loadStats() {
@@ -35,6 +36,81 @@ export function AdminDashboard() {
       console.error('Erro ao carregar mais conteúdo:', error);
     } finally {
       setLoadingMore(false);
+    }
+  };
+
+  // Função para carregar todo o conteúdo disponível
+  const handleLoadAll = async () => {
+    try {
+      setLoadingMore(true);
+      
+      // Verificar quantos itens faltam carregar
+      const totalToLoad = systemStats ? 
+        systemStats.database.total - systemStats.loaded.total : 0;
+      
+      if (totalToLoad <= 0) {
+        alert('Todo o conteúdo já foi carregado!');
+        setLoadingMore(false);
+        return;
+      }
+      
+      // Estimar quantas páginas precisamos carregar (50 itens por página)
+      const estimatedPages = Math.ceil(totalToLoad / 50);
+      console.log(`Iniciando carregamento de aproximadamente ${estimatedPages} páginas...`);
+      
+      // Carregar páginas sequencialmente
+      let loadedPages = 0;
+      let hasMoreContent = true;
+      
+      while (hasMoreContent && loadedPages < estimatedPages) {
+        console.log(`Carregando página ${loadedPages + 1} de ~${estimatedPages}...`);
+        await loadNextPage();
+        loadedPages++;
+        
+        // Verificar se ainda temos conteúdo para carregar
+        const currentStats = await getSystemStats();
+        const remainingItems = currentStats.database.total - currentStats.loaded.total;
+        
+        if (remainingItems <= 0) {
+          hasMoreContent = false;
+          console.log('Todo o conteúdo foi carregado!');
+        }
+        
+        // Atualizar estatísticas para feedback visual
+        setSystemStats(currentStats);
+      }
+      
+      console.log(`Carregamento concluído! ${loadedPages} páginas carregadas.`);
+      
+    } catch (error) {
+      console.error('Erro ao carregar todo o conteúdo:', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  // Função para forçar a inicialização do store
+  const handleInitializeStore = async () => {
+    try {
+      setLoadingInitial(true);
+      
+      // Limpar o sessionStorage para garantir que estamos começando do zero
+      sessionStorage.removeItem('iptv-session-stats');
+      
+      // Forçar a sincronização com o banco de dados
+      await syncFromCloud();
+      
+      // Recarregar as estatísticas
+      const stats = await getSystemStats();
+      setSystemStats(stats);
+      
+      // Mostrar mensagem de sucesso
+      alert('Store inicializado com sucesso!');
+    } catch (error) {
+      console.error('Erro ao inicializar store:', error);
+      alert('Erro ao inicializar store. Verifique o console para mais detalhes.');
+    } finally {
+      setLoadingInitial(false);
     }
   };
 
@@ -179,7 +255,7 @@ export function AdminDashboard() {
               </div>
             </div>
 
-            <div className="mt-8 flex justify-center">
+            <div className="mt-8 flex justify-center gap-4 flex-wrap">
               <button
                 onClick={handleLoadMore}
                 disabled={loadingMore}
@@ -192,6 +268,36 @@ export function AdminDashboard() {
                   </>
                 ) : (
                   <>Carregar Mais Conteúdo</>
+                )}
+              </button>
+              
+              <button
+                onClick={handleLoadAll}
+                disabled={loadingMore}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-md text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {loadingMore ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Carregando...
+                  </>
+                ) : (
+                  <>Carregar Todo o Conteúdo</>
+                )}
+              </button>
+              
+              <button
+                onClick={handleInitializeStore}
+                disabled={loadingInitial}
+                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-md text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {loadingInitial ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Inicializando...
+                  </>
+                ) : (
+                  <>Reinicializar Store</>
                 )}
               </button>
             </div>

@@ -40,6 +40,7 @@ function updateCache() {
 export function useLoadChannels() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
   const { 
     movies,
     series,
@@ -68,16 +69,24 @@ export function useLoadChannels() {
           // Adicionar timeout para evitar bloqueio infinito
           const syncPromise = syncFromCloud();
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Timeout ao sincronizar canais')), 15000)
+            setTimeout(() => reject(new Error('Timeout ao sincronizar canais')), 30000) // Aumentado para 30s
           );
           
           await Promise.race([syncPromise, timeoutPromise]);
           
-          // Se ainda não temos canais após a sincronização, tenta carregar a próxima página
-          if (movies.length === 0 && series.length === 0 && live.length === 0) {
-            console.log('Tentando carregar próxima página...');
+          // Carregar pelo menos as primeiras 5 páginas para garantir conteúdo suficiente
+          const pagesToLoad = 5;
+          console.log(`Carregando ${pagesToLoad} páginas iniciais para garantir conteúdo suficiente...`);
+          
+          for (let i = 0; i < pagesToLoad; i++) {
+            console.log(`Carregando página ${i + 1} de ${pagesToLoad}...`);
             await loadNextPage();
+            
+            // Pequena pausa para não sobrecarregar
+            await new Promise(resolve => setTimeout(resolve, 500));
           }
+          
+          console.log('Carregamento inicial concluído!');
         } catch (syncError) {
           console.error('Erro durante sincronização:', syncError);
           setError(syncError instanceof Error ? syncError.message : 'Erro ao carregar canais');
@@ -93,6 +102,7 @@ export function useLoadChannels() {
       
       // Atualizar cache mesmo se houver erro parcial
       updateCache();
+      setInitialLoadDone(true);
       
     } catch (error) {
       console.error('Erro ao carregar canais:', error);
@@ -100,8 +110,52 @@ export function useLoadChannels() {
     } finally {
       setLoading(false);
     }
-  }, [loading, movies, series, live, syncFromCloud, loadNextPage]);
+  }, [loading, movies.length, series.length, live.length, syncFromCloud, loadNextPage]);
 
+  // Carrega mais conteúdo em segundo plano após o carregamento inicial
+  useEffect(() => {
+    let isMounted = true;
+    
+    const loadMoreInBackground = async () => {
+      if (!initialLoadDone || loading) return;
+      
+      // Esperar um pouco após o carregamento inicial
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      if (!isMounted) return;
+      
+      try {
+        console.log('Iniciando carregamento adicional em segundo plano...');
+        
+        // Carregar mais 10 páginas em segundo plano
+        const additionalPages = 10;
+        
+        for (let i = 0; i < additionalPages; i++) {
+          if (!isMounted) break;
+          
+          console.log(`Carregando página adicional ${i + 1} de ${additionalPages}...`);
+          await loadNextPage();
+          
+          // Pausa maior entre carregamentos em segundo plano
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        console.log('Carregamento em segundo plano concluído!');
+      } catch (error) {
+        console.error('Erro no carregamento em segundo plano:', error);
+      }
+    };
+    
+    if (initialLoadDone) {
+      loadMoreInBackground();
+    }
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [initialLoadDone, loading, loadNextPage]);
+
+  // Efeito para carregar canais na inicialização
   useEffect(() => {
     loadChannelsSafely();
   }, [loadChannelsSafely]);

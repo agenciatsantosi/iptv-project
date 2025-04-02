@@ -1,142 +1,194 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Search, Play } from 'lucide-react';
+import { ArrowLeft, Search } from 'lucide-react';
 import { SeriesCard } from '../components/iptv/SeriesCard';
 import { AuthProtection } from '../components/auth/AuthProtection';
 import { useInfiniteChannels } from '../hooks/useInfiniteChannels';
-import { useGroupedSeries } from '../hooks/useGroupedSeries';
 import { InfiniteScroll } from '../components/shared/InfiniteScroll';
-import { useIPTVStore } from '../store/iptvStore';
-import { Channel } from '../types/iptv';
 
-interface GroupedSeries extends Channel {
-  episodes: Channel[];
+// Interface para séries agrupadas
+interface SeriesData {
+  id: string;
+  name: string;
+  title?: string;
+  episodes: any[];
+  seasons: number;
+  group?: string;
+  group_title?: string;
+  logo?: string | null;
 }
 
 export function SeriesPage() {
-  const { series } = useIPTVStore();
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Filtra as séries baseado no grupo e termo de busca
+  // Usar o hook useInfiniteChannels para carregar as séries
+  const { 
+    channels: seriesData, 
+    isLoading, 
+    error, 
+    hasMore, 
+    loadMore,
+    total,
+    isLoadingMore
+  } = useInfiniteChannels('series');
+
+  // Função para limpar o nome do grupo (remover prefixos como "Séries 1 -")
+  const cleanGroupName = (groupName: string) => {
+    // Remove prefixos como "Séries 1 -", "SÉRIES 2 -", etc.
+    return groupName.replace(/^S[ée]ries\s+\d+\s+-\s+/i, '');
+  };
+
+  // Remove duplicatas e pega todos os grupos
+  const uniqueSeries = useMemo(() => 
+    Array.from(new Map(seriesData.map(series => [series.id, series])).values()),
+    [seriesData]
+  );
+
+  // Extrai todos os grupos disponíveis
+  const groups = useMemo(() => {
+    const uniqueGroups = new Set(uniqueSeries.map(series => series.group_title || 'Sem Grupo'));
+    return Array.from(uniqueGroups)
+      .filter(group => 
+        group.toLowerCase().includes('series') || 
+        group.toLowerCase().includes('série') || 
+        group.toLowerCase().includes('serie')
+      )
+      .sort();
+  }, [uniqueSeries]);
+
+  // Seleciona automaticamente o primeiro grupo se nenhum estiver selecionado
+  useEffect(() => {
+    if (!selectedGroup && groups.length > 0) {
+      setSelectedGroup(groups[0]);
+    }
+  }, [groups, selectedGroup]);
+
+  // Filtra séries pelo grupo selecionado e busca
   const filteredSeries = useMemo(() => {
-    console.log('Filtrando séries:', {
-      total: series.length,
-      grupo: selectedGroup,
-      busca: searchTerm
-    });
-
-    let filtered = series;
-
-    // Filtra por grupo se selecionado
-    if (selectedGroup) {
-      filtered = filtered.filter(serie => serie.group_title === selectedGroup);
-    }
-
-    // Filtra por termo de busca
+    let filtered = selectedGroup 
+      ? uniqueSeries.filter(series => series.group_title === selectedGroup)
+      : [];  // Se nenhum grupo estiver selecionado, não mostra nenhuma série
+    
     if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter(serie => {
-        const name = (serie.name || '').toLowerCase();
-        const title = (serie.title || '').toLowerCase();
-        return name.includes(searchLower) || title.includes(searchLower);
-      });
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(series => (
+        series.name?.toLowerCase().includes(term) ||
+        series.full_name?.toLowerCase().includes(term)
+      ));
     }
 
-    // Agrupa séries por nome base
-    const grouped = filtered.reduce<Record<string, GroupedSeries>>((acc, serie) => {
-      const baseName = serie.name.split(/[sS]\d{2}[eE]\d{2}/)[0].trim();
-      if (!acc[baseName]) {
-        acc[baseName] = {
-          ...serie,
-          episodes: []
-        };
-      }
-      acc[baseName].episodes.push(serie);
-      return acc;
-    }, {});
+    return filtered;
+  }, [uniqueSeries, selectedGroup, searchTerm]);
 
-    const result = Object.values(grouped);
-    console.log('Séries filtradas:', {
-      total: result.length,
-      primeiras: result.slice(0, 2)
+  // Contagem de séries por grupo
+  const groupCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    
+    groups.forEach(group => {
+      counts[group] = uniqueSeries.filter(series => series.group_title === group).length;
     });
-
-    return result;
-  }, [series, selectedGroup, searchTerm]);
-
-  // Lista todos os grupos disponíveis
-  const availableGroups = useMemo(() => {
-    const groups = new Set(series.map(serie => serie.group_title).filter(Boolean));
-    const sortedGroups = Array.from(groups).sort();
-    console.log('Grupos disponíveis:', sortedGroups);
-    return sortedGroups;
-  }, [series]);
+    
+    return counts;
+  }, [uniqueSeries, groups]);
 
   return (
     <AuthProtection>
       <div className="min-h-screen bg-gradient-to-b from-zinc-900 to-black text-white">
         {/* Header Fixo */}
-        <header className="fixed top-0 inset-x-0 z-50 bg-black/80 backdrop-blur-sm border-b border-white/10">
-          <div className="container mx-auto px-4">
+        <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-b from-black/90 to-black/0 backdrop-blur-sm">
+          <div className="container mx-auto px-4 py-4">
             {/* Navegação */}
-            <div className="flex items-center h-16">
-              <Link to="/" className="p-2 hover:bg-white/10 rounded-lg transition">
-                <ArrowLeft className="w-6 h-6" />
-              </Link>
-              <h1 className="text-xl font-bold ml-2">Séries</h1>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <Link
+                  to="/"
+                  className="flex items-center justify-center w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 transition"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </Link>
+                <div>
+                  <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
+                    Séries
+                  </h1>
+                  {!isLoading && (
+                    <p className="text-sm text-white/60">
+                      {total} séries disponíveis
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Barra de Busca */}
+              <div className="relative max-w-md w-full">
+                <input
+                  type="text"
+                  placeholder="Buscar séries..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full px-4 py-2 pl-10 bg-white/10 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+                />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/50" />
+              </div>
             </div>
 
-            {/* Filtros */}
-            <div className="flex gap-4">
-              <select
-                className="bg-gray-800 text-white rounded px-4 py-2"
-                value={selectedGroup || 'all'}
-                onChange={(e) => setSelectedGroup(e.target.value === 'all' ? null : e.target.value)}
-              >
-                <option value="all">Todos os grupos</option>
-                {availableGroups.map(group => (
-                  <option key={group} value={group}>{group}</option>
+            {/* Seletor de Grupo */}
+            <div className="mt-6 overflow-x-auto">
+              <div className="flex space-x-2 pb-2">
+                {groups.map(group => (
+                  <button
+                    key={group}
+                    onClick={() => setSelectedGroup(group)}
+                    className={`px-4 py-2 rounded-full whitespace-nowrap ${
+                      selectedGroup === group
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-white/10 text-white/70 hover:bg-white/20'
+                    }`}
+                  >
+                    {cleanGroupName(group)} ({groupCounts[group] || 0})
+                  </button>
                 ))}
-              </select>
-
-              <input
-                type="text"
-                placeholder="Buscar séries..."
-                className="bg-gray-800 text-white rounded px-4 py-2"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+              </div>
             </div>
           </div>
-        </header>
+        </div>
 
         {/* Conteúdo Principal */}
-        <main className="container mx-auto px-4 pt-40 pb-8">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {filteredSeries.map((serie: GroupedSeries) => (
-              <SeriesCard key={serie.id} series={serie} />
-            ))}
-          </div>
-
-          {!filteredSeries.length && (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="w-16 h-16 mb-4 rounded-full bg-white/10 flex items-center justify-center">
-                <Search className="w-8 h-8 text-white/50" />
-              </div>
-              <h2 className="text-2xl font-bold text-white/90 mb-2">
-                Nenhuma série encontrada
-              </h2>
-              <p className="text-white/60 max-w-md">
-                {searchTerm 
-                  ? `Não encontramos nenhuma série com "${searchTerm}"`
-                  : selectedGroup
-                  ? `Nenhuma série encontrada no grupo "${selectedGroup}"`
-                  : 'Tente uma nova busca ou selecione um grupo diferente'}
-              </p>
+        <div className="container mx-auto px-4 pt-48 pb-8">
+          {error && (
+            <div className="text-red-500 text-center py-4">
+              Erro ao carregar séries: {error.message}
             </div>
           )}
-        </main>
+
+          <InfiniteScroll
+            hasMore={hasMore}
+            isLoading={isLoading}
+            isLoadingMore={isLoadingMore}
+            onLoadMore={loadMore}
+          >
+            {/* Grid de Séries */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+              {filteredSeries.map((series) => (
+                <SeriesCard 
+                  key={series.id} 
+                  series={{
+                    ...series,
+                    episodes: series.episodes || [],
+                    seasons: series.seasons || 1
+                  }} 
+                />
+              ))}
+            </div>
+          </InfiniteScroll>
+
+          {/* Mensagem se não houver séries */}
+          {!isLoading && filteredSeries.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-gray-400 text-lg">Nenhuma série encontrada.</p>
+            </div>
+          )}
+        </div>
       </div>
     </AuthProtection>
   );

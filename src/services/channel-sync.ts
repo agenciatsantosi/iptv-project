@@ -255,6 +255,7 @@ export function determineContentType(groupTitle: string = '', name: string = '')
   return 'live';
 }
 
+// Busca episódios de uma série pelo nome da série
 export async function loadSeriesEpisodes(seriesName: string) {
   try {
     console.log('Buscando episódios para série:', seriesName);
@@ -292,5 +293,126 @@ export async function loadSeriesEpisodes(seriesName: string) {
   } catch (error) {
     console.error('Erro ao carregar episódios:', error);
     throw error;
+  }
+}
+
+// Busca uma série pelo slug diretamente do banco de dados
+export async function findSeriesBySlug(slug: string) {
+  try {
+    console.log('Buscando série pelo slug:', slug);
+    
+    // Normaliza o slug para busca
+    const normalizedSlug = slug.toLowerCase().replace(/[^\w-]+/g, '');
+    
+    // Buscar todas as séries do Supabase (limitado a 1000 para performance)
+    const { data: seriesData, error: dbError } = await supabase
+      .from('channels')
+      .select('*')
+      .eq('type', 'series')
+      .order('name')
+      .limit(1000);
+
+    if (dbError) {
+      console.error('Erro ao buscar séries:', dbError);
+      throw new Error('Erro ao buscar séries');
+    }
+
+    if (!seriesData || seriesData.length === 0) {
+      console.warn('Nenhuma série encontrada no banco de dados');
+      return { series: null, error: 'Série não encontrada' };
+    }
+
+    // Encontrar a série que corresponde ao slug
+    const foundSeries = seriesData.find(series => {
+      const seriesTitle = series.title || series.name || '';
+      const seriesSlug = seriesTitle
+        .toLowerCase()
+        .replace(/[^\w\s-]+/g, '')
+        .trim()
+        .replace(/\s+/g, '-');
+      
+      return seriesSlug === normalizedSlug;
+    });
+
+    if (!foundSeries) {
+      console.warn(`Série com slug "${slug}" não encontrada entre ${seriesData.length} séries`);
+      return { series: null, error: 'Série não encontrada' };
+    }
+
+    // Formata a série encontrada
+    const formattedSeries = {
+      ...foundSeries,
+      id: foundSeries.id || uuidv4(),
+      logo: foundSeries.logo ? (
+        foundSeries.logo.startsWith('http') ? foundSeries.logo :
+        foundSeries.logo.startsWith('/') ? foundSeries.logo :
+        foundSeries.logo.startsWith('data:') ? foundSeries.logo :
+        `/${foundSeries.logo}`
+      ) : null,
+      group_title: foundSeries.group_title || 'Séries',
+      type: 'series',
+      url: foundSeries.url || foundSeries.stream_url || '',
+      stream_url: foundSeries.stream_url || foundSeries.url || '',
+    };
+
+    console.log('Série encontrada:', formattedSeries);
+
+    return { series: formattedSeries, error: null };
+  } catch (error) {
+    console.error('Erro ao buscar série pelo slug:', error);
+    return { series: null, error: 'Erro ao buscar série' };
+  }
+}
+
+// Busca episódios de uma série pelo nome da série
+export async function findSeriesEpisodes(seriesName: string) {
+  try {
+    console.log('Buscando episódios da série:', seriesName);
+    
+    if (!seriesName) {
+      return { episodes: [], error: 'Nome da série não fornecido' };
+    }
+    
+    // Buscar episódios que contenham o nome da série
+    const { data: episodes, error: dbError } = await supabase
+      .from('channels')
+      .select('*')
+      .eq('type', 'series')
+      .ilike('name', `%${seriesName}%`)
+      .order('name')
+      .limit(200);  // Limitado a 200 episódios para performance
+
+    if (dbError) {
+      console.error('Erro ao buscar episódios:', dbError);
+      throw new Error('Erro ao buscar episódios');
+    }
+
+    if (!episodes || episodes.length === 0) {
+      console.warn('Nenhum episódio encontrado para a série:', seriesName);
+      return { episodes: [], error: null };
+    }
+
+    // Formatar os episódios
+    const formattedEpisodes = episodes.map(episode => ({
+      ...episode,
+      id: episode.id || uuidv4(),
+      logo: episode.logo ? (
+        episode.logo.startsWith('http') ? episode.logo :
+        episode.logo.startsWith('/') ? episode.logo :
+        episode.logo.startsWith('data:') ? episode.logo :
+        `/${episode.logo}`
+      ) : null,
+      group_title: episode.group_title || 'Séries',
+      type: 'series',
+      url: episode.url || episode.stream_url || '',
+      stream_url: episode.stream_url || episode.url || '',
+    }));
+
+    console.log(`Encontrados ${formattedEpisodes.length} episódios para a série:`, seriesName);
+
+    return { episodes: formattedEpisodes, error: null };
+  } catch (error) {
+    console.error('Erro ao buscar episódios da série:', error);
+    return { episodes: [], error: 'Erro ao buscar episódios' };
   }
 }
