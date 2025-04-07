@@ -302,6 +302,193 @@ Se o sistema não estiver carregando todos os dados do banco:
 - As estatísticas são atualizadas em tempo real conforme o conteúdo é carregado
 - O armazenamento local é otimizado para evitar problemas de limite de tamanho
 
+## 🎬 Sistema Avançado de Players
+
+### Arquitetura de Players Especializados
+
+Nossa aplicação implementa um sistema de players especializados para diferentes tipos de conteúdo, garantindo a melhor experiência possível para cada formato:
+
+#### 📺 VideoPlayer (TV ao vivo)
+
+O VideoPlayer é especializado em streaming ao vivo utilizando tecnologias HLS:
+
+- **Características**:
+  - Implementado com HLS.js para processamento de fluxos .m3u8
+  - Configuração adaptativa para streaming em tempo real
+  - Otimizado para baixa latência e reconexão automática
+  - Detecção e tratamento de interrupções de stream
+  - Modo de recuperação para falhas de rede
+  - Suporte para segmentos MPEG-TS
+
+- **Configurações de Performance**:
+  - `enableWorker: true` para processamento em thread separada
+  - `lowLatencyMode: true` para minimizar delay
+  - `backBufferLength: 30` para economia de memória
+  - Tratamento avançado de erros de rede e mídia
+
+#### 🎥 VODPlayer (Filmes e Séries)
+
+O VODPlayer é otimizado para conteúdo sob demanda (Video On Demand):
+
+- **Características**:
+  - Acesso direto à fonte MP4 sem necessidade de proxy
+  - Extração automática da URL original a partir de URLs de proxy
+  - Player HTML5 nativo para máxima compatibilidade
+  - Interface com indicadores de carregamento
+  - Sistema de recuperação de erros com botão de retry
+  - Mensagens de erro amigáveis
+
+- **Vantagens**:
+  - Carregamento mais rápido e direto dos vídeos
+  - Menor uso de recursos do servidor
+  - Melhor compatibilidade com diversos formatos MP4
+  - Experiência mais fluida para conteúdo VOD
+
+### Sistema Inteligente de Detecção de Conteúdo
+
+A plataforma detecta automaticamente o tipo de conteúdo e seleciona o player mais adequado:
+
+- **Detecção Automática**:
+  - Identificação do tipo de conteúdo (filme, série, TV ao vivo)
+  - Seleção do player apropriado baseado no tipo
+  - Configuração automática de parâmetros específicos
+
+- **Tratamento Especializado**:
+  - TV ao vivo: VideoPlayer com HLS.js e proxy de streaming
+  - Filmes/Séries: VODPlayer com acesso direto MP4
+
+## 🔄 Sistema de Proxy Duplo para Streaming
+
+### Arquitetura de Proxy Especializado
+
+Nossa plataforma utiliza um sistema de proxy duplo, com servidores dedicados para diferentes tipos de conteúdo:
+
+#### 📡 Live Proxy (Porta 3001)
+
+Servidor proxy especializado em conteúdo de TV ao vivo:
+
+- **Características**:
+  - Otimizado para streaming contínuo e de baixa latência
+  - Headers especializados para CORS e segurança
+  - Suporte a diversos formatos de streaming ao vivo
+  - Tratamento de redirecionamentos e autenticação
+  - Verificação de URLs para formato adequado
+
+- **Funcionalidades**:
+  - Endpoint `/stream` para transmissão de conteúdo ao vivo
+  - Endpoint `/direct` para acesso direto com headers otimizados
+  - Endpoint `/generate-url` para URLs alternativas de canais
+  - Health check para monitoramento de status
+
+#### 🎞️ VOD Proxy (Porta 3002)
+
+Servidor proxy especializado em conteúdo sob demanda (filmes e séries):
+
+- **Características**:
+  - Otimizado para arquivos MP4 e conteúdo VOD
+  - Sistema de cache para melhor desempenho
+  - Conversão opcional via FFmpeg para compatibilidade
+  - Stream controlado de arquivos grandes
+  - Gerenciamento de conexões ativas
+
+- **Funcionalidades**:
+  - Cache de streams para economia de largura de banda
+  - Conversão sob demanda de formatos não suportados
+  - Limpeza automática de streams inativos
+  - Estatísticas de uso e monitoramento
+
+### Gerenciamento Centralizado de Proxies
+
+O sistema inicia e gerencia automaticamente ambos os proxies:
+
+- **Controle Unificado**:
+  - Inicialização automática de ambos os servidores
+  - Monitoramento de status e reinicialização em caso de falha
+  - Logs unificados para diagnóstico de problemas
+  - Encerramento gracioso em caso de shutdown
+
+- **Configuração Flexível**:
+  - Variáveis de ambiente para portas dos serviços
+  - Facilidade de manutenção e atualização
+  - Tolerância a falhas com reinicialização automática
+  - Compatibilidade com ambiente de produção e desenvolvimento
+
+## 📋 Uso do Sistema
+
+### Para Usuários Finais
+
+1. **Navegando no Conteúdo**:
+   - Acesse `/movies` para filmes
+   - Acesse `/series` para séries de TV
+   - Acesse `/live` para canais de TV ao vivo
+
+2. **Assistindo Conteúdo**:
+   - Clique em "Assistir" em qualquer item para iniciar a reprodução
+   - Para filmes e séries: reprodução direta sem proxy
+   - Para TV ao vivo: reprodução via HLS com proxy de streaming
+
+3. **Recursos durante a Reprodução**:
+   - Controles padrão (play/pause, volume, fullscreen)
+   - Opções de qualidade de vídeo (quando disponível)
+   - Status de carregamento e bufferização
+
+### Para Desenvolvedores
+
+1. **Iniciando os Servidores**:
+   ```bash
+   # Na pasta v20/src/server
+   node --loader tsx start-proxies.ts
+   ```
+
+2. **Portas dos Serviços**:
+   - Live Proxy (TV ao vivo): `http://localhost:3001`
+   - VOD Proxy (Filmes/Séries): `http://localhost:3002`
+
+3. **Principais Endpoints**:
+   - `/stream?url=URL_ENCODED_STREAM` - Para iniciar streaming de conteúdo
+   - `/health` - Para verificar status dos servidores
+   - `/hls/STREAM_ID/index.m3u8` - Para acessar playlists HLS geradas
+
+4. **Variáveis de Ambiente**:
+   - `LIVE_PROXY_PORT` - Porta para o proxy de TV ao vivo (padrão: 3001)
+   - `PROXY_PORT` - Porta para o proxy VOD (padrão: 3002)
+   - `VITE_LIVE_PROXY_URL` - URL base para o proxy de TV ao vivo
+   - `VITE_VOD_PROXY_URL` - URL base para o proxy VOD
+
+## 🔧 Manutenção e Solução de Problemas
+
+### Problemas Comuns e Soluções
+
+1. **Vídeo não carrega**:
+   - Para TV ao vivo: verifique se o proxy na porta 3001 está rodando
+   - Para filmes/séries: verifique se a URL MP4 original está acessível
+
+2. **Erro de CORS**:
+   - Verifique se os headers de CORS estão corretamente configurados nos proxies
+   - Teste acesso direto à URL de mídia para confirmar disponibilidade
+
+3. **Alto uso de CPU/memória**:
+   - Verifique número de streams ativos no painel de administração
+   - Considere ajustar parâmetros de buffer e qualidade para streams frequentes
+
+4. **Problemas de proxy**:
+   - Verifique logs de cada servidor proxy para diagnosticar erros específicos
+   - Reinicie os servidores proxy se necessário
+
+### Logs e Monitoramento
+
+Os proxies geram logs detalhados com informações importantes:
+
+- **Formato dos Logs**:
+  - `[VOD Proxy]` ou `[Live Proxy]` prefixando cada mensagem
+  - Timestamp implícito nos logs
+  - Detalhes da operação ou erro ocorrido
+
+- **Níveis de Log**:
+  - Informativo: operações normais
+  - Aviso: problemas não críticos
+  - Erro: falhas que requerem atenção
+
 ## 📋 Requisitos Detalhados
 
 ### Requisitos de Sistema
@@ -863,24 +1050,72 @@ Para suporte, envie um email para [seu-email@dominio.com] ou abra uma issue no G
 ### 📊 Métricas de Progresso
 
 #### Frontend
-- Implementado: 65%
-- Em desenvolvimento: 20%
-- Pendente: 15%
+- Implementado: 75%
+- Em desenvolvimento: 15%
+- Pendente: 10%
 
 #### Backend
-- Implementado: 55%
+- Implementado: 60%
 - Em desenvolvimento: 25%
-- Pendente: 20%
+- Pendente: 15%
 
 #### Admin
-- Implementado: 30%
-- Em desenvolvimento: 40%
-- Pendente: 30%
+- Implementado: 45%
+- Em desenvolvimento: 35%
+- Pendente: 20%
 
 ### 🎯 Objetivos para Próxima Release
 
-1. Completar dashboard administrativo
-2. Implementar sistema de cache avançado
-3. Adicionar histórico e favoritos
-4. Melhorar performance do player
-5. Implementar sistema de busca avançado
+1. Implementar sistema de favoritos e histórico de visualização
+2. Melhorar sistema de busca com filtros avançados
+3. Adicionar mais opções de personalização no player
+4. Implementar sistema de recomendações personalizado
+5. Expandir funcionalidades do painel administrativo
+
+## 🔄 Atualizações Recentes (Abril 2025)
+
+#### ✅ Melhorias na Página de Séries
+- [x] Implementação de agrupamento de séries para evitar entradas duplicadas
+- [x] Adição de contadores para total de séries e episódios no topo da página
+- [x] Correção da navegação para a página de detalhes ao clicar em um card de série
+- [x] Remoção do filtro de grupo "all" que causava problemas no carregamento
+- [x] Implementação de modo de depuração para alternar entre lista estática e busca dinâmica
+- [x] Substituição da lista horizontal de botões por um dropdown para melhor visualização em dispositivos móveis
+- [x] Implementação de gerenciamento de estado para controle do dropdown
+- [x] Adição de detecção de clique fora para fechar o dropdown automaticamente
+
+#### ✅ Melhorias na Página de TV ao Vivo
+- [x] Ajuste da lógica de filtragem para remover grupos relacionados a filmes ou séries
+- [x] Implementação de lista completa de grupos para canais de TV ao vivo
+- [x] Exclusão de grupos com termos como "SÉRIES", "LANÇAMENTOS" e "LEGENDADOS"
+- [x] Otimização da exibição de canais para melhor desempenho
+
+#### ✅ Componente de Banner de Redes Sociais
+- [x] Criação de componente que busca e exibe links de redes sociais ativos
+- [x] Implementação de tratamento de erros com mensagem de fallback
+- [x] Integração com o painel administrativo para gerenciamento dos links
+
+#### ✅ Player de Vídeo Otimizado
+- [x] Adição de atributos essenciais para iOS/Android: playsInline, muted, crossOrigin
+- [x] Implementação de detecção automática de dispositivos móveis
+- [x] Simplificação dos controles em dispositivos móveis
+- [x] Adição de suporte a fullscreen nativo para iOS
+- [x] Implementação de tratamento de erros com mensagens amigáveis
+- [x] Adição de tentativa de autoplay com fallback para reprodução manual
+
+#### ✅ Otimização para Dispositivos Móveis
+- [x] Implementação de menu mobile específico com posicionamento fixo
+- [x] Utilização de classes de grid responsivas em todas as páginas
+- [x] Adaptação automática dos componentes de cartões para diferentes tamanhos de tela
+- [x] Headers fixos com z-index adequado para navegação em dispositivos móveis
+- [x] Barras de pesquisa e filtros otimizados para toque
+- [x] Implementação de rolagem infinita para melhor desempenho
+
+#### ✅ Painel Administrativo
+- [x] Implementação completa do gerenciador de redes sociais
+- [x] Interface para adicionar, editar e excluir links de redes sociais
+- [x] Controle de status (ativo/inativo) para cada rede social
+- [x] Definição de ordem de exibição personalizada
+- [x] Integração com o banco de dados Supabase
+
+{{ ... }}
