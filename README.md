@@ -1118,4 +1118,59 @@ Para suporte, envie um email para [seu-email@dominio.com] ou abra uma issue no G
 - [x] Definição de ordem de exibição personalizada
 - [x] Integração com o banco de dados Supabase
 
+## 📝 Sistema de Gerenciamento de Páginas Estáticas
+
+Foi implementado um sistema completo para gerenciar o conteúdo das páginas estáticas da plataforma, sem necessidade de modificar o código-fonte.
+
+### Funcionalidades Principais
+
+- **Painel Administrativo Dedicado**:
+  - Interface intuitiva para edição de páginas estáticas
+  - Editor de conteúdo HTML com formatação rica
+  - Pré-visualização instantânea
+  - Organização clara das páginas disponíveis
+
+- **Páginas Gerenciáveis**:
+  - Sobre Nós
+  - Contato
+  - Termos de Uso
+  - Política de Privacidade
+  - Ajuda
+  - FAQ
+
+- **Armazenamento em Banco de Dados**:
+  - Conteúdo armazenado no Supabase
+  - Carregamento dinâmico do conteúdo
+  - Atualização instantânea após edição
+  - Versionamento e histórico de alterações
+
+- **Renderizador Unificado**:
+  - Componente StaticPageRenderer para exibição consistente
+  - Suporte a HTML complexo para formatação avançada
+  - Estados de carregamento e erro tratados elegantemente
+  - Layout responsivo para todos os dispositivos
+
+- **Segurança**:
+  - Row Level Security para proteção do conteúdo
+  - Acesso restrito a administradores
+  - Validação de conteúdo antes da persistência
+  - Sanitização de HTML para evitar scripts maliciosos
+
+### Implementação Técnica
+
+- **Banco de Dados**:
+  - Tabela `static_pages` no Supabase
+  - Campos para ID, título, conteúdo e timestamps
+  - Políticas de segurança definidas para controle de acesso
+
+- **Frontend**:
+  - Componente AdminPagesPage para interface de administração
+  - StaticPageRenderer para exibição do conteúdo ao usuário
+  - Versões simplificadas das páginas estáticas usando o renderizador
+
+- **Migração**:
+  - Script SQL de migração para criação da estrutura
+  - Dados iniciais para todas as páginas
+  - Processo para atualização e backup de conteúdo
+
 {{ ... }}
