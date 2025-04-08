@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Users, BarChart2, Settings, Tv, Upload } from 'lucide-react';
+import { Users, BarChart2, Settings, Tv, Upload, FileText } from 'lucide-react';
 
 interface MenuItem {
   label: string;
@@ -31,6 +31,11 @@ export function AdminMenu() {
       label: 'Listas IPTV',
       path: '/admin/iptv',
       icon: <Upload className="w-5 h-5" />
+    },
+    {
+      label: 'Páginas',
+      path: '/admin/pages',
+      icon: <FileText className="w-5 h-5" />
     },
     {
       label: 'Configurações',

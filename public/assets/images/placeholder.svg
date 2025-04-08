@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="600" viewBox="0 0 400 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="600" fill="#1A1A1A"/>
+  <path d="M200 250C211.046 250 220 241.046 220 230C220 218.954 211.046 210 200 210C188.954 210 180 218.954 180 230C180 241.046 188.954 250 200 250Z" fill="#444444"/>
+  <path d="M240 300C240 322.091 222.091 340 200 340C177.909 340 160 322.091 160 300C160 277.909 177.909 260 200 260C222.091 260 240 277.909 240 300Z" fill="#444444"/>
+  <path d="M140 390V380C140 358.909 171.909 340 200 340C228.091 340 260 358.909 260 380V390H140Z" fill="#444444"/>
+  <rect x="100" y="420" width="200" height="20" rx="5" fill="#333333"/>
+  <rect x="100" y="450" width="150" height="15" rx="5" fill="#333333"/>
+  <text x="200" y="500" font-family="Arial" font-size="24" text-anchor="middle" fill="#666666">Imagem Indisponível</text>
+</svg>

@@ -209,7 +209,7 @@ export async function loadChannelDetails(channelId: string) {
 }
 
 // Incrementa visualizações de um canal
-export async function incrementViews(channelId: string) {
+export async function incrementViews() {
   try {
     // Aqui você precisaria implementar a lógica para incrementar as visualizações do canal em um armazenamento local
     return { error: null };
@@ -220,9 +220,103 @@ export async function incrementViews(channelId: string) {
 }
 
 // Determina o tipo de conteúdo baseado no título e nome
-export function determineContentType(groupTitle: string = '', name: string = ''): 'live' | 'movie' | 'series' {
-  const lowerGroup = (groupTitle || '').toLowerCase();
-  const lowerName = (name || '').toLowerCase();
+export function determineContentType(name: string = '', groupTitle: string = ''): 'live' | 'movie' | 'series' {
+  // Normalizar os textos para comparação
+  const lowerName = name.toLowerCase();
+  const lowerGroup = groupTitle.toLowerCase();
+
+  // Verificar casos específicos primeiro - 1883 é sempre série
+  if (lowerName.includes('1883')) {
+    return 'series';
+  }
+
+  // Lista de códigos de país comuns em listas IPTV
+  const countryCodes = [
+    'pt', 'br', 'us', 'uk', 'fr', 'es', 'it', 'de', 'ca', 'mx', 
+    'ar', 'cl', 'co', 'pe', 'jp', 'kr', 'cn', 'ru', 'in', 'au', 
+    'nz', 'za', 'nl', 'be', 'ch', 'at', 'pl', 'se', 'no', 'dk', 
+    'fi', 'gr', 'tr', 'ae', 'sa', 'eg', 'il', 'sg', 'my', 'th',
+    'vn', 'ph', 'id', 'ie', 'is', 'lu', 'cz', 'sk', 'hu', 'ro',
+    'bg', 'hr', 'rs', 'si', 'ee', 'lv', 'lt', 'ua', 'by', 'md',
+    'ge', 'am', 'az', 'kz', 'uz', 'tm', 'kg', 'tj', 'mn', 'hk',
+    'tw', 'mo', 'la', 'kh', 'mm', 'np', 'bd', 'lk', 'pk', 'af',
+    'ir', 'iq', 'sy', 'jo', 'lb', 'ps', 'cy', 'mt', 'al', 'mk',
+    'ba', 'me', 'li', 'mc', 'sm', 'va', 'ad', 'gi', 'im', 'je',
+    'gg', 'fo', 'gl', 'ax', 'pm', 'nc', 'pf', 'wf', 'yt', 're',
+    'gp', 'mq', 'gf', 'bl', 'mf', 'sx'
+  ];
+
+  // Lista de nomes de países comuns em group-title
+  const countryNames = [
+    'portugal', 'brasil', 'brazil', 'usa', 'united states', 'estados unidos',
+    'united kingdom', 'reino unido', 'england', 'inglaterra', 'scotland', 'escócia',
+    'france', 'frança', 'spain', 'españa', 'espanha', 'italy', 'italia', 'itália',
+    'germany', 'alemanha', 'deutschland', 'canada', 'mexico', 'méxico',
+    'argentina', 'chile', 'colombia', 'colômbia', 'peru', 'perú',
+    'japan', 'japão', 'japao', 'korea', 'coreia', 'china', 'russia', 'rússia',
+    'india', 'índia', 'australia', 'austrália', 'new zealand', 'nova zelândia',
+    'south africa', 'áfrica do sul', 'netherlands', 'holanda', 'países baixos',
+    'belgium', 'bélgica', 'switzerland', 'suíça', 'austria', 'áustria',
+    'poland', 'polônia', 'sweden', 'suécia', 'norway', 'noruega',
+    'denmark', 'dinamarca', 'finland', 'finlândia', 'greece', 'grécia',
+    'turkey', 'turquia', 'uae', 'emirates', 'emirados', 'saudi', 'arábia',
+    'egypt', 'egito', 'israel', 'singapore', 'singapura', 'malaysia', 'malásia',
+    'thailand', 'tailândia', 'vietnam', 'vietnã', 'philippines', 'filipinas',
+    'indonesia', 'indonésia', 'ireland', 'irlanda', 'iceland', 'islândia',
+    'luxembourg', 'luxemburgo', 'czech', 'república tcheca', 'slovakia', 'eslováquia',
+    'hungary', 'hungria', 'romania', 'romênia', 'bulgaria', 'bulgária',
+    'croatia', 'croácia', 'serbia', 'sérvia', 'slovenia', 'eslovênia',
+    'estonia', 'estônia', 'latvia', 'letônia', 'lithuania', 'lituânia',
+    'ukraine', 'ucrânia', 'belarus', 'bielorrússia', 'moldova', 'moldávia',
+    'georgia', 'geórgia', 'armenia', 'armênia', 'azerbaijan', 'azerbaijão',
+    'kazakhstan', 'cazaquistão', 'uzbekistan', 'uzbequistão', 'turkmenistan', 'turcomenistão',
+    'kyrgyzstan', 'quirguistão', 'tajikistan', 'tajiquistão', 'mongolia', 'mongólia',
+    'hong kong', 'taiwan', 'macao', 'macau', 'laos', 'cambodia', 'camboja',
+    'myanmar', 'birmânia', 'nepal', 'bangladesh', 'sri lanka', 'pakistan', 'paquistão',
+    'afghanistan', 'afeganistão', 'iran', 'irã', 'iraq', 'iraque', 'syria', 'síria',
+    'jordan', 'jordânia', 'lebanon', 'líbano', 'palestine', 'palestina', 'cyprus', 'chipre',
+    'malta', 'albania', 'albânia', 'macedonia', 'macedônia', 'bosnia', 'bósnia',
+    'montenegro', 'liechtenstein', 'monaco', 'mônaco', 'san marino', 'vatican', 'vaticano',
+    'andorra', 'gibraltar', 'isle of man', 'jersey', 'guernsey', 'faroe', 'ilhas faroé',
+    'greenland', 'groenlândia', 'aland', 'åland', 'saint pierre', 'new caledonia', 'nova caledônia',
+    'french polynesia', 'polinésia francesa', 'wallis', 'futuna', 'mayotte', 'reunion', 'reunião',
+    'guadeloupe', 'martinique', 'french guiana', 'guiana francesa', 'saint barthélemy',
+    'saint martin', 'sint maarten', 'latino', 'latin', 'américa latina'
+  ];
+
+  // Detectar canais com prefixo de país (PT |, BR |, etc.)
+  // Verificar se o nome começa com um código de país seguido de barra vertical
+  const hasCountryPrefix = countryCodes.some(code => 
+    lowerName.match(new RegExp(`^${code}\\s*\\|`))
+  );
+  
+  // Verificar se o grupo é um nome de país conhecido
+  const isCountryGroup = countryNames.some(country => 
+    lowerGroup === country || lowerGroup.includes(country)
+  );
+
+  // Depuração para o caso específico PT | AFRO MUSIC com group-title=PORTUGAL
+  if (name.includes('AFRO MUSIC') || groupTitle === 'PORTUGAL') {
+    console.log('Detecção de canal:', {
+      nome: name,
+      grupo: groupTitle,
+      temPrefixoPais: hasCountryPrefix,
+      eGrupoPais: isCountryGroup,
+      resultado: (hasCountryPrefix || isCountryGroup) ? 'live' : 'outro'
+    });
+  }
+
+  if (
+    (hasCountryPrefix || 
+    lowerName.includes('(opcao') || // Canais com opções alternativas
+    lowerName.includes('(opc') ||
+    isCountryGroup) &&
+    !lowerName.includes('1080p') && // Excluir filmes que possam ter prefixo de país
+    !lowerName.includes('720p') &&
+    !lowerName.match(/s\d{2}e\d{2}/) // Excluir séries que possam ter prefixo de país
+  ) {
+    return 'live';
+  }
 
   // Verifica se é filme
   if (
@@ -242,13 +336,38 @@ export function determineContentType(groupTitle: string = '', name: string = '')
   if (
     lowerGroup.includes('serie') ||
     lowerGroup.includes('series') ||
+    lowerGroup.includes('série') ||
     lowerName.includes('s01') ||
     lowerName.includes('e01') ||
     lowerName.match(/s\d{2}e\d{2}/) || // Formato SxxExx
     lowerName.match(/temporada/) ||
-    lowerName.match(/episodio/)
+    lowerName.match(/episodio/) ||
+    lowerName.match(/capítulo/) ||
+    // Verificar se o nome parece ser uma série (padrões adicionais)
+    lowerName.match(/\d+x\d+/) || // Formato 1x01
+    (lowerName.match(/^\d{4}$/) && !lowerName.match(/^\d{4} ao vivo$/)) // Apenas 4 dígitos (ano) e não é "ao vivo"
   ) {
     return 'series';
+  }
+
+  // Verifica se é canal ao vivo
+  if (
+    lowerGroup.includes('tv') ||
+    lowerGroup.includes('canal') ||
+    lowerGroup.includes('ao vivo') ||
+    lowerGroup.includes('live') ||
+    lowerGroup.includes('sport') ||
+    lowerGroup.includes('esporte') ||
+    lowerGroup.includes('news') ||
+    lowerGroup.includes('notícia') ||
+    lowerGroup.includes('music') ||
+    lowerGroup.includes('música') ||
+    lowerName.includes('tv') ||
+    lowerName.includes('canal') ||
+    lowerName.includes('ao vivo') ||
+    lowerName.includes('live')
+  ) {
+    return 'live';
   }
 
   // Se não for filme nem série, é live
@@ -297,70 +416,275 @@ export async function loadSeriesEpisodes(seriesName: string) {
 }
 
 // Busca uma série pelo slug diretamente do banco de dados
-export async function findSeriesBySlug(slug: string) {
+export async function findSeriesBySlug(slug: string): Promise<Channel | null> {
+  if (!slug) return null;
+  
+  const debug = false; // Desabilitar logs de depuração
+  const normalizedSlug = slug.toLowerCase().trim();
+  
+  if (debug) console.log(`Buscando série pelo slug: ${normalizedSlug}`);
+  
+  // Verificar cache primeiro
+  const cachedSeries = localStorage.getItem(`series-${normalizedSlug}`);
+  if (cachedSeries) {
+    try {
+      const parsed = JSON.parse(cachedSeries);
+      const cacheAge = Date.now() - parsed.timestamp;
+      
+      // Se o cache for válido (menos de 24 horas)
+      if (cacheAge < 24 * 60 * 60 * 1000) {
+        if (debug) console.log(`Série encontrada no cache: ${parsed.series.name}`);
+        return parsed.series;
+      } else {
+        if (debug) console.log('Cache expirado, buscando dados atualizados');
+        localStorage.removeItem(`series-${normalizedSlug}`);
+      }
+    } catch (e) {
+      console.error('Erro ao processar cache de série:', e);
+      localStorage.removeItem(`series-${normalizedSlug}`);
+    }
+  }
+  
+  // Estratégia 1: Busca otimizada por nome similar
   try {
-    console.log('Buscando série pelo slug:', slug);
-    
-    // Normaliza o slug para busca
-    const normalizedSlug = slug.toLowerCase().replace(/[^\w-]+/g, '');
-    
-    // Buscar todas as séries do Supabase (limitado a 1000 para performance)
+    if (debug) console.log('Estratégia 1: Busca por nome similar');
     const { data: seriesData, error: dbError } = await supabase
       .from('channels')
       .select('*')
       .eq('type', 'series')
+      .ilike('name', `%${normalizedSlug.replace(/-/g, '%')}%`)
+      .limit(50);
+    
+    if (dbError) {
+      console.error('Erro ao buscar série por nome:', dbError);
+    } else if (seriesData && seriesData.length > 0) {
+      // Encontrar a melhor correspondência
+      const series = findBestMatch(seriesData, normalizedSlug);
+      if (series) {
+        if (debug) console.log(`Série encontrada por nome similar: ${series.name}`);
+        cacheSeriesData(normalizedSlug, series);
+        return formatSeries(series);
+      }
+    }
+  } catch (error) {
+    console.error('Erro na estratégia 1:', error);
+  }
+  
+  // Estratégia 2: Busca por grupo
+  try {
+    // Verificar se o slug contém informações de grupo
+    const groupMatch = normalizedSlug.match(/(.+?)-(.+)/);
+    if (groupMatch && groupMatch.length >= 3) {
+      const possibleGroup = groupMatch[1].replace(/-/g, ' ');
+      const seriesName = groupMatch[2].replace(/-/g, ' ');
+      
+      if (debug) console.log(`Estratégia 2: Busca por grupo "${possibleGroup}" e nome "${seriesName}"`);
+      
+      const { data: groupSeriesData, error: groupError } = await supabase
+        .from('channels')
+        .select('*')
+        .eq('type', 'series')
+        .ilike('group_title', `%${possibleGroup}%`)
+        .limit(100);
+      
+      if (groupError) {
+        console.error('Erro ao buscar série por grupo:', groupError);
+      } else if (groupSeriesData && groupSeriesData.length > 0) {
+        // Buscar a melhor correspondência dentro do grupo
+        const series = findBestMatch(groupSeriesData, seriesName);
+        if (series) {
+          if (debug) console.log(`Série encontrada por grupo: ${series.name}`);
+          cacheSeriesData(normalizedSlug, series);
+          return formatSeries(series);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Erro na estratégia 2:', error);
+  }
+  
+  // Estratégia 3: Busca paginada completa
+  try {
+    if (debug) console.log('Estratégia 3: Busca paginada completa');
+    
+    // Limitar a busca a 10 páginas (10.000 séries) para evitar sobrecarga
+    const maxPages = 10;
+    const pageSize = 1000;
+    
+    for (let page = 0; page < maxPages; page++) {
+      if (debug) console.log(`Buscando página ${page + 1} de ${maxPages}`);
+      
+      const { data: allSeriesData, error: allSeriesError } = await supabase
+        .from('channels')
+        .select('*')
+        .eq('type', 'series')
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+      
+      if (allSeriesError) {
+        console.error(`Erro ao buscar página ${page + 1}:`, allSeriesError);
+        continue;
+      }
+      
+      if (!allSeriesData || allSeriesData.length === 0) {
+        if (debug) console.log(`Nenhuma série encontrada na página ${page + 1}`);
+        break; // Não há mais dados para buscar
+      }
+      
+      // Buscar a melhor correspondência
+      const series = findBestMatch(allSeriesData, normalizedSlug);
+      if (series) {
+        if (debug) console.log(`Série encontrada na página ${page + 1}: ${series.name}`);
+        cacheSeriesData(normalizedSlug, series);
+        return formatSeries(series);
+      }
+      
+      // Se chegamos à última página ou não há mais dados, parar a busca
+      if (allSeriesData.length < pageSize) {
+        if (debug) console.log('Fim dos dados, parando busca');
+        break;
+      }
+    }
+  } catch (error) {
+    console.error('Erro na estratégia 3:', error);
+  }
+  
+  console.error(`Série não encontrada para o slug: ${normalizedSlug}`);
+  return null;
+};
+
+/**
+ * Encontra a melhor correspondência para o slug em um array de séries
+ */
+function findBestMatch(seriesArray: any[], slug: string): any | null {
+  if (!seriesArray || seriesArray.length === 0) return null;
+  
+  const normalizedSlug = slug.toLowerCase().replace(/-/g, ' ').trim();
+  
+  // Primeiro, tentar encontrar uma correspondência exata
+  const exactMatch = seriesArray.find(s => 
+    s.name.toLowerCase() === normalizedSlug ||
+    s.name.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedSlug.replace(/[^a-z0-9]/g, '')
+  );
+  
+  if (exactMatch) return exactMatch;
+  
+  // Se não houver correspondência exata, encontrar a melhor correspondência parcial
+  let bestMatch = null;
+  let highestScore = 0;
+  
+  for (const series of seriesArray) {
+    const seriesName = series.name.toLowerCase();
+    
+    // Calcular pontuação de similaridade
+    let score = 0;
+    
+    // Verificar se o slug está contido no nome da série
+    if (seriesName.includes(normalizedSlug)) {
+      score += 5;
+    }
+    
+    // Verificar palavras em comum
+    const slugWords = normalizedSlug.split(' ');
+    const nameWords = seriesName.split(' ');
+    
+    for (const word of slugWords) {
+      if (word.length > 2 && nameWords.includes(word)) {
+        score += 2;
+      }
+    }
+    
+    // Verificar se as iniciais correspondem
+    const slugInitials = slugWords.map((w: string) => w[0]).join('');
+    const nameInitials = nameWords.map((w: string) => w[0]).join('');
+    
+    if (slugInitials === nameInitials) {
+      score += 3;
+    }
+    
+    // Atualizar a melhor correspondência se esta tiver pontuação mais alta
+    if (score > highestScore) {
+      highestScore = score;
+      bestMatch = series;
+    }
+  }
+  
+  // Retornar a melhor correspondência se tiver uma pontuação mínima
+  return highestScore >= 2 ? bestMatch : null;
+}
+
+/**
+ * Formata os dados da série para o formato esperado pela aplicação
+ */
+function formatSeries(series: any): Channel {
+  return {
+    ...series,
+    id: series.id || `${series.name}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+    logo: series.logo || null,
+    group_title: series.group_title || 'Sem Categoria',
+    type: 'series'
+  };
+}
+
+/**
+ * Armazena os dados da série em cache para acesso rápido futuro
+ */
+function cacheSeriesData(slug: string, series: any): void {
+  try {
+    localStorage.setItem(`series-${slug}`, JSON.stringify({
+      series: formatSeries(series),
+      timestamp: Date.now()
+    }));
+  } catch (e) {
+    console.error('Erro ao salvar série em cache:', e);
+  }
+}
+
+// Carrega episódios de uma série
+export async function loadEpisodes(seriesName: string) {
+  try {
+    console.log(`Carregando episódios para: ${seriesName}`);
+    
+    // Buscar episódios que contenham o nome da série
+    const { data: episodes, error: dbError } = await supabase
+      .from('channels')
+      .select('*')
+      .eq('type', 'series')
+      .ilike('name', `%${seriesName}%`)
       .order('name')
-      .limit(1000);
+      .limit(200);  // Limitado a 200 episódios para performance
 
     if (dbError) {
-      console.error('Erro ao buscar séries:', dbError);
-      throw new Error('Erro ao buscar séries');
+      console.error('Erro ao buscar episódios:', dbError);
+      throw new Error('Erro ao buscar episódios');
     }
 
-    if (!seriesData || seriesData.length === 0) {
-      console.warn('Nenhuma série encontrada no banco de dados');
-      return { series: null, error: 'Série não encontrada' };
+    if (!episodes || episodes.length === 0) {
+      console.warn('Nenhum episódio encontrado para a série:', seriesName);
+      return { episodes: [], error: null };
     }
 
-    // Encontrar a série que corresponde ao slug
-    const foundSeries = seriesData.find(series => {
-      const seriesTitle = series.title || series.name || '';
-      const seriesSlug = seriesTitle
-        .toLowerCase()
-        .replace(/[^\w\s-]+/g, '')
-        .trim()
-        .replace(/\s+/g, '-');
-      
-      return seriesSlug === normalizedSlug;
-    });
-
-    if (!foundSeries) {
-      console.warn(`Série com slug "${slug}" não encontrada entre ${seriesData.length} séries`);
-      return { series: null, error: 'Série não encontrada' };
-    }
-
-    // Formata a série encontrada
-    const formattedSeries = {
-      ...foundSeries,
-      id: foundSeries.id || uuidv4(),
-      logo: foundSeries.logo ? (
-        foundSeries.logo.startsWith('http') ? foundSeries.logo :
-        foundSeries.logo.startsWith('/') ? foundSeries.logo :
-        foundSeries.logo.startsWith('data:') ? foundSeries.logo :
-        `/${foundSeries.logo}`
+    // Formatar os episódios
+    const formattedEpisodes = episodes.map(episode => ({
+      ...episode,
+      id: episode.id || uuidv4(),
+      logo: episode.logo ? (
+        episode.logo.startsWith('http') ? episode.logo :
+        episode.logo.startsWith('/') ? episode.logo :
+        episode.logo.startsWith('data:') ? episode.logo :
+        `/${episode.logo}`
       ) : null,
-      group_title: foundSeries.group_title || 'Séries',
+      group_title: episode.group_title || 'Séries',
       type: 'series',
-      url: foundSeries.url || foundSeries.stream_url || '',
-      stream_url: foundSeries.stream_url || foundSeries.url || '',
-    };
+      url: episode.url || episode.stream_url || '',
+      stream_url: episode.stream_url || episode.url || '',
+    }));
 
-    console.log('Série encontrada:', formattedSeries);
+    console.log(`Encontrados ${formattedEpisodes.length} episódios para a série:`, seriesName);
 
-    return { series: formattedSeries, error: null };
+    return { episodes: formattedEpisodes, error: null };
   } catch (error) {
-    console.error('Erro ao buscar série pelo slug:', error);
-    return { series: null, error: 'Erro ao buscar série' };
+    console.error('Erro ao buscar episódios da série:', error);
+    return { episodes: [], error: 'Erro ao buscar episódios' };
   }
 }
 

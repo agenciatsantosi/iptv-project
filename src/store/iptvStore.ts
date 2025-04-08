@@ -29,15 +29,28 @@ interface IPTVState {
   clearAll: () => Promise<void>;
   setFeatured: (featured: FeaturedContent[]) => void;
   addChannels: (channels: Channel[], source: string) => Promise<{ success: boolean; totalChannels: number; categories: { movies: number; series: number; live: number }; error?: string }>;
+  seriesPageState: {
+    selectedGroup: string | null;
+    scrollPosition: number;
+    lastUpdated: number;
+    groupCounts: Record<string, number>;
+    totalSeries: number;
+  };
+  setSeriesPageState: (state: Partial<{
+    selectedGroup: string | null;
+    scrollPosition: number;
+    lastUpdated: number;
+    groupCounts: Record<string, number>;
+    totalSeries: number;
+  }>) => void;
+  resetSeriesPageState: () => void;
 }
-
-const PAGE_SIZE = 20; // Reduzido de 50 para 20 para carregamento inicial mais rápido
 
 export const useIPTVStore = create<IPTVState>()(
   persist(
     (set, get) => ({
-        movies: [],
-        series: [],
+      movies: [],
+      series: [],
       live: [],
       loading: false,
       error: null,
@@ -49,106 +62,126 @@ export const useIPTVStore = create<IPTVState>()(
       hasMore: true,
       filter: '',
       totalChannels: 0,
+      seriesPageState: {
+        selectedGroup: null,
+        scrollPosition: 0,
+        lastUpdated: 0,
+        groupCounts: {},
+        totalSeries: 0
+      },
 
       loadNextPage: async () => {
-        const { currentPage, filter, loading, hasMore } = get();
+        const { currentPage, filter, loading } = get();
         
         if (loading) {
-          console.log('Ignorando loadNextPage: já está carregando');
+          console.log('Já existe um carregamento em andamento, aguardando...');
           return;
         }
+        
+        const debug = false;
         
         set({ loading: true, error: null });
         
         try {
-          console.log('Carregando página', currentPage, 'com filtro:', filter || 'nenhum');
-          const { channels, total, error } = await loadChannels(currentPage, filter);
+          const nextPage = currentPage + 1;
+          if (debug) console.log(`Carregando página ${nextPage} com filtro: ${filter || 'nenhum'}`);
+          
+          const result = await loadChannels(nextPage, filter);
+          const { channels: data, total: count, error } = result;
           
           if (error) {
             console.error('Erro ao carregar canais:', error);
             set({ error, loading: false });
             return;
           }
-
-          if (!channels || channels.length === 0) {
+          
+          if (!data || data.length === 0) {
             console.warn('Nenhum canal retornado da API');
             set({ 
               loading: false,
               hasMore: false,
-              error: null
+              error: 'Nenhum canal encontrado'
             });
             return;
           }
-
-          console.log('Canais carregados:', channels.length);
-
-          // Adicionar campos padrão para canais sem informações completas
-          const channelsWithDefaults = channels.map(channel => ({
-            ...channel,
-            id: channel.id || `${channel.name}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-            logo: channel.logo || null,
-            group_title: channel.group_title || 'Sem Categoria',
-            type: channel.type || determineContentType(channel.group_title || '', channel.name || '')
-          }));
-
-          console.log('Classificando conteúdo...');
-          const classified = classifyContent(channelsWithDefaults);
-          console.log('Classificação:', {
-            movies: classified.movies.length,
-            series: classified.series.length,
-            live: classified.live.length,
-            exemplos: classified.exemplos
-          });
-
-          // Atualizar o estado com os novos canais
-          const newState = {
-            movies: [...get().movies, ...classified.movies],
-            series: [...get().series, ...classified.series],
-            live: [...get().live, ...classified.live],
-            currentPage: currentPage + 1,
-            loading: false,
-            hasMore: channels.length === PAGE_SIZE,
-            totalChannels: total,
-            error: null
-          };
           
-          set(newState);
-          
-          // Salvar estatísticas no sessionStorage para acesso fácil
-          try {
-            const stats = {
-              movies: newState.movies.length,
-              series: newState.series.length,
-              live: newState.live.length,
-              total: newState.movies.length + newState.series.length + newState.live.length,
-              timestamp: Date.now()
-            };
-            sessionStorage.setItem('iptv-session-stats', JSON.stringify(stats));
-            console.log('Estatísticas salvas no sessionStorage:', stats);
-          } catch (statsError) {
-            console.error('Erro ao salvar estatísticas no sessionStorage:', statsError);
+          if (debug) {
+            console.log(`Total de canais encontrados: ${count}`);
+            console.log(`Canais nesta página: ${data.length}`);
           }
           
-          console.log('Estado atualizado:', {
-            movies: newState.movies.length,
-            series: newState.series.length,
-            live: newState.live.length,
-            total
+          const channelsWithDefaults = data.map(channel => {
+            // Tentar extrair o título de várias propriedades possíveis
+            const title = channel.title || channel.name || channel.full_name || 
+                         (channel.group_title && channel.group_title !== 'Sem Categoria' ? channel.group_title : '') || 
+                         'Sem título';
+                         
+            return {
+              ...channel,
+              id: channel.id || `${channel.name}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+              logo: channel.logo || null,
+              group_title: channel.group_title || 'Sem Categoria',
+              type: channel.type || determineContentType(channel.group_title || '', channel.name || ''),
+              title: title,
+              name: title || channel.name || 'Sem título'
+            };
+          });
+          
+          if (debug) console.log('Classificando conteúdo...');
+          const classified = classifyContent(channelsWithDefaults);
+          
+          if (debug) {
+            console.log('Classificação:', {
+              movies: classified.movies.length,
+              series: classified.series.length,
+              live: classified.live.length
+            });
+          }
+          
+          set(state => {
+            const stats = {
+              movies: state.movies.length + classified.movies.length,
+              series: state.series.length + classified.series.length,
+              live: state.live.length + classified.live.length,
+              total: count,
+              timestamp: Date.now()
+            };
+            
+            try {
+              sessionStorage.setItem('channelStats', JSON.stringify(stats));
+              if (debug) console.log('Estatísticas salvas no sessionStorage:', stats);
+            } catch (e) {
+              console.error('Erro ao salvar estatísticas:', e);
+            }
+            
+            if (debug) console.log('Estado atualizado:', {
+              movies: state.movies.length + classified.movies.length,
+              series: state.series.length + classified.series.length,
+              live: state.live.length + classified.live.length,
+              total: count
+            });
+            
+            return {
+              movies: [...state.movies, ...classified.movies],
+              series: [...state.series, ...classified.series],
+              live: [...state.live, ...classified.live],
+              currentPage: nextPage,
+              totalChannels: count,
+              loading: false,
+              hasMore: data.length > 0 && nextPage < 20
+            };
           });
         } catch (error) {
-          console.error('Erro ao carregar próxima página:', error);
-          set({ 
-            loading: false,
-            error: error instanceof Error ? error.message : 'Erro desconhecido'
-          });
+          console.error('Erro ao carregar canais:', error);
+          set({ error: 'Erro ao carregar canais', loading: false });
         }
       },
 
       setFilter: (filter: string) => {
         set({
           filter,
-            movies: [],
-            series: [],
+          movies: [],
+          series: [],
           live: [],
           currentPage: 0,
           hasMore: true
@@ -184,14 +217,12 @@ export const useIPTVStore = create<IPTVState>()(
 
           console.log('Canais carregados da nuvem:', channels.length);
 
-          // Adicionar timestamp aos IDs para garantir unicidade
           const timestamp = Date.now();
           const channelsWithUniqueIds = channels.map((channel, index) => ({
             ...channel,
             id: channel.id || `${channel.name}-${timestamp}-${index}`.toLowerCase().replace(/[^a-z0-9-]/g, '-')
           }));
 
-          // Classificar conteúdo
           console.log('Classificando conteúdo...');
           const classified = classifyContent(channelsWithUniqueIds);
           console.log('Classificação concluída:', {
@@ -208,15 +239,14 @@ export const useIPTVStore = create<IPTVState>()(
           });
           
           set({ 
-              movies: classified.movies,
-              series: classified.series,
+            movies: classified.movies,
+            series: classified.series,
             live: classified.live,
             loading: false,
             error: null,
             totalChannels: channels.length
           });
 
-          // Atualizar cache após sucesso
           try {
             const cacheData = {
               timestamp: Date.now(),
@@ -269,16 +299,16 @@ export const useIPTVStore = create<IPTVState>()(
         try {
           await clearChannels();
         set({
-            movies: [],
-            series: [],
-            live: [], 
-            loading: false,
-            error: null,
+          movies: [],
+          series: [],
+          live: [], 
+          loading: false,
+          error: null,
           currentPage: 0,
           hasMore: true,
-            totalChannels: 0,
-            activeList: null
-          });
+          totalChannels: 0,
+          activeList: null
+        });
         } catch (error) {
           console.error('Erro ao limpar canais:', error);
           set({ error: 'Erro ao limpar canais', loading: false });
@@ -287,7 +317,6 @@ export const useIPTVStore = create<IPTVState>()(
 
       addChannels: async (channels: Channel[], source: string) => {
         try {
-          // Adicionar campos padrão para canais sem informações completas
           const channelsWithDefaults = channels.map(channel => ({
             ...channel,
             id: channel.id || `${channel.name}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
@@ -304,13 +333,11 @@ export const useIPTVStore = create<IPTVState>()(
             live: classified.live.length
           });
 
-          // Salvar no banco de dados
           const result = await syncChannels(channelsWithDefaults);
           if (!result.success) {
             throw new Error(result.error || 'Erro ao sincronizar canais');
           }
 
-          // Atualizar o estado
           set((state) => ({
             movies: [...state.movies, ...classified.movies],
             series: [...state.series, ...classified.series],
@@ -340,13 +367,30 @@ export const useIPTVStore = create<IPTVState>()(
       },
 
       setFeatured: (featured) => set({ featured }),
+      setSeriesPageState: (newState) => set((state) => {
+        const updatedState = {
+          ...state.seriesPageState,
+          ...newState,
+          lastUpdated: Date.now()
+        };
+        
+        localStorage.setItem('seriesPageState', JSON.stringify(updatedState));
+        
+        return { seriesPageState: updatedState };
+      }),
+      resetSeriesPageState: () => set((state) => {
+        const resetState = { selectedGroup: null, scrollPosition: 0, lastUpdated: Date.now(), groupCounts: {}, totalSeries: 0 };
+        localStorage.setItem('seriesPageState', JSON.stringify(resetState));
+        return { seriesPageState: resetState };
+      })
     }),
     {
       name: 'iptv-storage',
       partialize: (state) => ({
         favorites: state.favorites,
         watchHistory: state.watchHistory,
-        featured: state.featured
+        featured: state.featured,
+        seriesPageState: state.seriesPageState
       })
     }
   )

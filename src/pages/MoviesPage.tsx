@@ -28,8 +28,16 @@ export function MoviesPage() {
   );
 
   const groups = useMemo(() => {
+    // Obter grupos únicos
     const uniqueGroups = new Set(uniqueMovies.map(movie => movie.group_title || 'Sem Grupo'));
-    return Array.from(uniqueGroups).sort();
+    
+    // Filtrar apenas grupos de filmes (excluir grupos que contenham "SÉRIES")
+    const filteredGroups = Array.from(uniqueGroups).filter(group => 
+      !group.toUpperCase().includes('SÉRIES') && 
+      !group.toUpperCase().includes('SERIES')
+    );
+    
+    return filteredGroups.sort();
   }, [uniqueMovies]);
 
   // Filtra filmes pelo grupo selecionado e busca

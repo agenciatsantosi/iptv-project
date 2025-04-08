@@ -1,15 +1,17 @@
 import React, { useEffect, useState, useMemo, Suspense, useCallback } from 'react';
-import { Box, Container, VStack, useToast, Button, Text, Heading, Spinner } from '@chakra-ui/react';
+import { Box, Container, VStack, useToast, Button, Text, Heading, Spinner, Flex } from '@chakra-ui/react';
 import { EnhancedHeroBanner } from '../components/home/EnhancedHeroBanner';
 import { ContentCarousel } from '../components/shared/ContentCarousel';
+import { SocialMediaBanner } from '../components/shared/SocialMediaBanner';
 import { useIPTVStore } from '../store/iptvStore';
 import { useAuthContext } from '../contexts/AuthContext';
-import { FeaturedContent } from '../types/content';
 import { supabase } from '../lib/supabase';
+import { FeaturedBanner } from '../components/Banner/FeaturedBanner';
+import type { FeaturedContent } from '../types/content';
 
 const ITEMS_PER_PAGE = 50; // Número de itens por página em cada categoria
-
 const INITIAL_ITEMS = 20;
+const CACHE_KEYS = ['channels_cache', 'channels_cache_v3']; // Chaves de cache para limpar
 
 export function HomePage() {
   const toast = useToast();
@@ -27,7 +29,7 @@ export function HomePage() {
   // Estado local
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [featuredContent, setFeaturedContent] = useState<any[]>([]);
+  const [featuredContent, setFeaturedContent] = useState<FeaturedContent[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
 
   // Estado local para controlar o que está visível
@@ -78,7 +80,7 @@ export function HomePage() {
         });
       } else {
         const existing = groupedSeries.get(baseName);
-        if (episodeInfo && !existing.episodes.some(ep => 
+        if (episodeInfo && !existing.episodes.some((ep: { season: number; episode: number }) => 
           ep.season === episodeInfo.season && ep.episode === episodeInfo.episode
         )) {
           existing.episodeCount++;
@@ -96,11 +98,6 @@ export function HomePage() {
     return Array.from(groupedSeries.values());
   };
 
-  interface BannerConfig {
-    selectedGroups: string[];
-    moviesPerGroup: number;
-  }
-
   // Função para formatar URL da imagem
   const formatImageUrl = (url: string) => {
     if (!url) return '';
@@ -111,42 +108,85 @@ export function HomePage() {
   };
 
   // Função para formatar conteúdo
-  const formatContent = (item: any) => {
-    if (!item) return null;
+  const formatContent = (item: any): FeaturedContent => {
+    if (!item) {
+      // Retornar um objeto vazio que satisfaz o tipo FeaturedContent
+      return {
+        id: '',
+        title: '',
+        type: 'movie',
+        description: '',
+        posterUrl: '',
+        backdropUrl: '',
+        trailerUrl: '',
+        rating: 0,
+        year: 0,
+        duration: '',
+        genres: [],
+        cast: [],
+        director: '',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    }
 
     const logo = item.logo || item.thumbnailUrl || item.thumbnailPath || item.posterUrl || item.posterPath || '';
     
+    // Tentar extrair o título de várias propriedades possíveis
+    const title = item.title || item.name || '';
+    
+    // Formatar URLs para garantir que são válidas
+    const posterUrl = formatImageUrl(logo);
+    const thumbnailUrl = formatImageUrl(item.thumbnailUrl || item.thumbnailPath || '');
+    const backdropUrl = formatImageUrl(item.backdropUrl || item.backdropPath || '');
+    
     return {
-      type: item.type || 'movie',
-      id: item.id || '',
-      title: item.name || '',
-      name: item.name || '',
-      description: item.description || '',
-      logo: formatImageUrl(logo),
-      thumbnailUrl: formatImageUrl(item.thumbnailUrl || item.thumbnailPath || ''),
-      posterUrl: formatImageUrl(item.posterUrl || item.posterPath || ''),
-      backdropUrl: formatImageUrl(item.backdropUrl || item.backdropPath || ''),
+      type: item.type,
+      id: item.id,
+      title: title,
+      name: item.name,
+      description: item.description || item.overview || '',
+      logo: posterUrl,
+      thumbnailUrl: thumbnailUrl,
+      posterUrl: posterUrl,
+      backdropUrl: backdropUrl,
       trailerUrl: item.trailerUrl || '',
       videoUrl: item.url || '',
-      rating: item.rating || '',
-      year: item.year || '',
-      duration: item.duration || '',
+      rating: item.rating || item.vote_average || 0,
+      year: item.year || item.release_date || item.first_air_date || '',
+      duration: item.duration || item.runtime || '',
       genres: item.genres || [],
       cast: item.cast || [],
       director: item.director || '',
-      studio: item.studio || '',
+      episodes: item.episodes || [],
+      episodeCount: item.episodeCount || 0,
       group: item.group || item.group_title || '',
-      views: item.views || 0,
-      createdAt: item.createdAt || new Date().toISOString(),
-      updatedAt: item.updatedAt || new Date().toISOString(),
+      createdAt: item.createdAt || new Date(),
+      updatedAt: item.updatedAt || new Date()
     };
   };
 
   // Função para formatar conteúdo com memoização
-  const formatContentWithId = useCallback((item: any) => {
+  const formatContentWithId = useCallback((item: any): FeaturedContent => {
     if (!item) {
       console.warn('Tentativa de formatar item nulo ou indefinido');
-      return null;
+      return {
+        id: '',
+        title: '',
+        type: 'movie',
+        description: '',
+        posterUrl: '',
+        backdropUrl: '',
+        trailerUrl: '',
+        rating: 0,
+        year: 0,
+        duration: '',
+        genres: [],
+        cast: [],
+        director: '',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
     }
     
     return formatContent({
@@ -184,6 +224,27 @@ export function HomePage() {
   // Carregar conteúdo inicial
   useEffect(() => {
     let mounted = true;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    // Verificar se já temos conteúdo carregado
+    if (initialLoading === false && (movies.length > 0 || series.length > 0 || live.length > 0)) {
+      console.log('Conteúdo já carregado, ignorando carregamento adicional');
+      return;
+    }
+
+    // Função para selecionar conteúdo em destaque
+    const selectFeaturedContent = (movies: any[], series: any[]) => {
+      const allContent = [...movies, ...series].filter(item => 
+        item.thumbnailUrl || item.posterUrl || item.logo || item.thumbnailPath
+      );
+      
+      // Ordenar aleatoriamente e pegar os primeiros 5
+      return allContent
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 5)
+        .map(formatContent);
+    };
 
     const loadInitialContent = async () => {
       try {
@@ -209,9 +270,15 @@ export function HomePage() {
         }
 
         console.log('Nenhum conteúdo encontrado, carregando da API...');
-        // Se não temos conteúdo, carregar
+        
+        // Definir um timeout para evitar bloqueio infinito
+        const loadPromise = loadNextPage();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout ao carregar conteúdo')), 15000)
+        );
+        
         try {
-          await loadNextPage();
+          await Promise.race([loadPromise, timeoutPromise]);
         } catch (loadError) {
           console.error('Erro ao carregar próxima página:', loadError);
         }
@@ -237,8 +304,22 @@ export function HomePage() {
           return;
         }
 
-        // Se ainda não temos conteúdo, mostrar mensagem apropriada
-        console.warn('Nenhum conteúdo carregado após loadNextPage');
+        // Se ainda não temos conteúdo e ainda temos tentativas disponíveis, tentar novamente
+        if (retryCount < maxRetries) {
+          console.log(`Tentativa ${retryCount + 1} de ${maxRetries} falhou. Tentando novamente em 2 segundos...`);
+          retryCount++;
+          
+          // Tentar novamente após um pequeno delay
+          setTimeout(() => {
+            if (mounted) {
+              loadInitialContent();
+            }
+          }, 2000);
+          return;
+        }
+
+        // Se esgotamos as tentativas, mostrar mensagem apropriada
+        console.warn('Nenhum conteúdo carregado após múltiplas tentativas');
         if (mounted) {
           setError('Não foi possível carregar o conteúdo. Por favor, tente novamente.');
         }
@@ -257,18 +338,19 @@ export function HomePage() {
           });
         }
       } finally {
-        if (mounted) {
+        if (mounted && retryCount >= maxRetries) {
           setInitialLoading(false);
         }
       }
     };
 
+    // Iniciar carregamento
     loadInitialContent();
 
     return () => {
       mounted = false;
     };
-  }, [movies, series, live, loadNextPage, selectFeaturedContent, setFeatured, toast]);
+  }, [movies.length, series.length, live.length, loadNextPage, initialLoading, toast, setFeatured]);
 
   // Gerenciar paginação do conteúdo
   useEffect(() => {
@@ -292,63 +374,144 @@ export function HomePage() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Memorizar estado do conteúdo
-  const contentState = useMemo(() => ({
-    hasMovies: movies.length > 0,
-    hasSeries: series.length > 0,
-    hasLive: live.length > 0,
-    isEmpty: !storeLoading && movies.length === 0 && series.length === 0 && live.length === 0
-  }), [movies.length, series.length, live.length, storeLoading]);
-
   // Pegar apenas os primeiros N itens de cada categoria
   const limitedMovies = useMemo(() => movies.slice(0, INITIAL_ITEMS), [movies]);
-  const limitedSeries = useMemo(() => series.slice(0, INITIAL_ITEMS), [series]);
+  
+  // Agrupar séries para mostrar séries diferentes em vez de episódios
+  const groupedSeries = useMemo(() => {
+    // Usar a função de agrupamento para garantir que cada série apareça apenas uma vez
+    const grouped = groupSeriesEpisodes(series);
+    console.log('Séries agrupadas:', grouped.length);
+    return grouped.slice(0, INITIAL_ITEMS);
+  }, [series]);
+  
   const limitedLive = useMemo(() => live.slice(0, INITIAL_ITEMS), [live]);
 
-  // Renderizar loading state
+  // Formatar conteúdo para exibição
+  const formattedContent = useMemo(() => {
+    // Filtrar e formatar canais ao vivo
+    const filteredLive = live.filter(channel => {
+      // Excluir especificamente a série 1883 da seção de TV ao vivo
+      if (channel.name.toLowerCase().includes('1883')) {
+        console.log('Excluindo 1883 da seção de TV ao vivo:', channel.name);
+        return false;
+      }
+      
+      // Permitir todos os outros canais ao vivo
+      return true;
+    });
+
+    console.log(`Canais ao vivo após filtro: ${filteredLive.length} de ${live.length}`);
+
+    return {
+      movies: limitedMovies.map(formatContentWithId),
+      series: groupedSeries.map(formatContentWithId),
+      live: filteredLive.map(formatContentWithId),
+    };
+  }, [limitedMovies, groupedSeries, live, formatContentWithId]);
+
+  // Verificar o estado do conteúdo
+  const contentState = useMemo(() => {
+    const hasMovies = formattedContent.movies.length > 0;
+    const hasSeries = formattedContent.series.length > 0;
+    const hasLive = live.length > 0; // Usar o array original de live para verificar se existem canais
+    const isEmpty = !storeLoading && formattedContent.movies.length === 0 && formattedContent.series.length === 0 && formattedContent.live.length === 0;
+
+    console.log('Estado do conteúdo:', {
+      hasMovies,
+      hasSeries,
+      hasLive,
+      liveCount: formattedContent.live.length,
+      totalLive: live.length,
+      isEmpty
+    });
+
+    return {
+      hasMovies,
+      hasSeries,
+      hasLive,
+      isEmpty
+    };
+  }, [formattedContent, storeLoading, live.length]);
+
+  // Função para limpar o cache e recarregar os canais
+  const handleClearCache = useCallback(() => {
+    // Limpar cache de canais
+    Object.keys(localStorage).forEach(key => {
+      if (CACHE_KEYS.some(cacheKey => key.startsWith(cacheKey))) {
+        localStorage.removeItem(key);
+      }
+    });
+    
+    toast({
+      title: 'Cache limpo',
+      description: 'O cache foi limpo com sucesso. Recarregando canais...',
+      status: 'success',
+      duration: 3000,
+      isClosable: true,
+    });
+    
+    // Recarregar a página para aplicar as alterações
+    window.location.reload();
+  }, [toast]);
+
+  // Renderizar componente de erro
+  const renderError = () => (
+    <Box 
+      width="100%" 
+      textAlign="center" 
+      py={20}
+      display="flex"
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      minHeight="50vh"
+    >
+      <Heading as="h2" size="xl" mb={4} color="red.500">
+        Erro ao carregar conteúdo
+      </Heading>
+      <Text fontSize="lg" mb={6}>
+        {error || 'Não foi possível carregar o conteúdo. Por favor, tente novamente.'}
+      </Text>
+      <Button 
+        colorScheme="red" 
+        size="lg"
+        onClick={() => {
+          setError(null);
+          setInitialLoading(true);
+          loadNextPage();
+        }}
+      >
+        Tentar Novamente
+      </Button>
+    </Box>
+  );
+
+  // Renderizar componente de carregamento
+  const renderLoading = () => (
+    <Box 
+      width="100%" 
+      textAlign="center" 
+      py={20}
+      display="flex"
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      minHeight="50vh"
+    >
+      <Spinner size="xl" color="red.500" mb={4} />
+      <Text fontSize="lg">Carregando conteúdo...</Text>
+    </Box>
+  );
+
+  // Renderizar conteúdo principal
   if (initialLoading || storeLoading) {
-    console.log('Renderizando estado de loading...');
-    return (
-      <Box height="100vh" display="flex" alignItems="center" justifyContent="center">
-        <VStack spacing={4}>
-          <Spinner size="xl" />
-          <Text>Carregando conteúdo...</Text>
-        </VStack>
-      </Box>
-    );
+    return renderLoading();
   }
 
   // Mostrar erro se houver
   if (error || storeError) {
-    return (
-      <Box minH="100vh" p={4}>
-        <Container maxW="container.xl">
-          <VStack spacing={4} align="stretch">
-            <Box p={4} bg="red.50" color="red.500" borderRadius="md">
-              <Heading size="md" mb={2}>Erro ao carregar conteúdo</Heading>
-              <Text>{error || storeError}</Text>
-              <Button
-                mt={4}
-                colorScheme="red"
-                onClick={() => {
-                  // Tentar carregar novamente
-                  setError(null);
-                  loadNextPage();
-                  setInitialLoading(true);
-                  
-                  // Definir um timeout para evitar loading infinito
-                  setTimeout(() => {
-                    setInitialLoading(false);
-                  }, 5000);
-                }}
-              >
-                Tentar Novamente
-              </Button>
-            </Box>
-          </VStack>
-        </Container>
-      </Box>
-    );
+    return renderError();
   }
 
   // Renderizar estado vazio - Modificado para mostrar um botão de tentar novamente
@@ -372,52 +535,106 @@ export function HomePage() {
   }
 
   console.log('Renderizando conteúdo:', {
-    movies: formattedMovies.length,
-    series: formattedSeries.length,
-    live: formattedLive.length,
+    movies: formattedContent.movies.length,
+    series: formattedContent.series.length,
+    live: formattedContent.live.length,
     featured: featuredContent.length
   });
 
   // Renderizar conteúdo
   return (
-    <Box minH="100vh" bg="gray.900">
+    <Box minH="100vh" bg="black">
       {featuredContent?.[0] && (
         <EnhancedHeroBanner content={featuredContent[0]} />
       )}
 
-      <Container maxW="container.xl" py={8}>
-        <VStack spacing={8} align="stretch">
+      <Container maxW="container.xl" py={4}>
+        <VStack spacing={4} align="stretch">
+          
           {contentState.hasMovies && (
             <Suspense fallback={<Spinner />}>
-              <ContentCarousel
-                title="Filmes"
-                items={limitedMovies}
-                type="movie"
-              />
+              <Box className="content-section">
+                <Flex justify="space-between" align="center" mb={2}>
+                  <Text fontSize="lg" fontWeight="bold" color="white">Filmes Recomendado</Text>
+                  <Text fontSize="sm" color="yellow.400" cursor="pointer">
+                    Ver mais
+                  </Text>
+                </Flex>
+                <ContentCarousel
+                  items={formattedContent.movies}
+                  type="movie"
+                  fixedLayout={true}
+                />
+              </Box>
             </Suspense>
           )}
 
           {contentState.hasSeries && (
             <Suspense fallback={<Spinner />}>
-              <ContentCarousel
-                title="Séries"
-                items={limitedSeries}
-                type="series"
-              />
+              <Box className="content-section">
+                <Flex justify="space-between" align="center" mb={2}>
+                  <Text fontSize="lg" fontWeight="bold" color="white">Séries Recomendado</Text>
+                  <Text fontSize="sm" color="yellow.400" cursor="pointer">
+                    Ver mais
+                  </Text>
+                </Flex>
+                <ContentCarousel
+                  items={formattedContent.series}
+                  type="series"
+                  fixedLayout={true}
+                />
+              </Box>
             </Suspense>
           )}
 
           {contentState.hasLive && (
             <Suspense fallback={<Spinner />}>
-              <ContentCarousel
-                title="TV Ao Vivo"
-                items={limitedLive}
-                type="live"
-              />
+              <Box className="content-section">
+                <Flex justify="space-between" align="center" mb={2}>
+                  <Text fontSize="lg" fontWeight="bold" color="white">TV Ao Vivo</Text>
+                  <Text fontSize="sm" color="yellow.400" cursor="pointer">
+                    Ver mais
+                  </Text>
+                </Flex>
+                {formattedContent.live.length > 0 ? (
+                  <ContentCarousel
+                    items={formattedContent.live}
+                    type="live"
+                    fixedLayout={true}
+                  />
+                ) : (
+                  <Box 
+                    p={6} 
+                    bg="gray.800" 
+                    borderRadius="md" 
+                    textAlign="center"
+                  >
+                    <Text mb={4}>Nenhum canal de TV ao vivo disponível no momento.</Text>
+                    <Button 
+                      colorScheme="blue" 
+                      size="sm"
+                      onClick={() => {
+                        // Limpar cache e recarregar
+                        Object.keys(localStorage).forEach(key => {
+                          if (key.includes('channels_cache')) {
+                            localStorage.removeItem(key);
+                          }
+                        });
+                        window.location.reload();
+                      }}
+                    >
+                      Tentar Novamente
+                    </Button>
+                  </Box>
+                )}
+              </Box>
             </Suspense>
           )}
 
-          {(!formattedMovies?.length && !formattedSeries?.length && !formattedLive?.length) && (
+          {/* Banner do SocialMedia */}
+          <SocialMediaBanner title="Participe das nossas redes sociais" />
+
+          {(!formattedContent.movies?.length && !formattedContent.series?.length && !formattedContent.live?.length) && (
             <Box textAlign="center" py={8}>
               <Text color="white">Nenhum conteúdo disponível no momento.</Text>
               <Button

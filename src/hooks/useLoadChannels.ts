@@ -41,6 +41,7 @@ export function useLoadChannels() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [backgroundLoadStarted, setBackgroundLoadStarted] = useState(false);
   const { 
     movies,
     series,
@@ -60,6 +61,15 @@ export function useLoadChannels() {
 
       // Verifica se tem dados básicos carregados
       const hasBasicData = movies.length > 0 || series.length > 0 || live.length > 0;
+      const totalItems = movies.length + series.length + live.length;
+
+      // Se já tiver muitos itens carregados, não carrega mais
+      if (totalItems > 500) {
+        console.log(`Já existem ${totalItems} itens carregados, pulando carregamento adicional`);
+        setInitialLoadDone(true);
+        setLoading(false);
+        return;
+      }
 
       // Se não tiver dados básicos ou o cache expirou, carrega tudo
       if (!hasBasicData || shouldRefreshCache()) {
@@ -74,8 +84,9 @@ export function useLoadChannels() {
           
           await Promise.race([syncPromise, timeoutPromise]);
           
-          // Carregar pelo menos as primeiras 5 páginas para garantir conteúdo suficiente
-          const pagesToLoad = 5;
+          // Carregar apenas as primeiras 3 páginas para garantir conteúdo suficiente
+          // Reduzido de 5 para 3 para diminuir o carregamento inicial
+          const pagesToLoad = 3;
           console.log(`Carregando ${pagesToLoad} páginas iniciais para garantir conteúdo suficiente...`);
           
           for (let i = 0; i < pagesToLoad; i++) {
@@ -117,7 +128,10 @@ export function useLoadChannels() {
     let isMounted = true;
     
     const loadMoreInBackground = async () => {
-      if (!initialLoadDone || loading) return;
+      if (!initialLoadDone || loading || backgroundLoadStarted) return;
+      
+      // Marcar que o carregamento em segundo plano já começou para evitar duplicações
+      setBackgroundLoadStarted(true);
       
       // Esperar um pouco após o carregamento inicial
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -127,17 +141,27 @@ export function useLoadChannels() {
       try {
         console.log('Iniciando carregamento adicional em segundo plano...');
         
-        // Carregar mais 10 páginas em segundo plano
-        const additionalPages = 10;
+        // Reduzido de 10 para 5 páginas em segundo plano
+        const additionalPages = 5;
+        
+        // Limitar o número total de itens
+        const maxItems = 1000;
         
         for (let i = 0; i < additionalPages; i++) {
           if (!isMounted) break;
+          
+          // Verificar se já temos itens suficientes
+          const currentTotal = movies.length + series.length + live.length;
+          if (currentTotal >= maxItems) {
+            console.log(`Limite de ${maxItems} itens atingido (${currentTotal}), parando carregamento`);
+            break;
+          }
           
           console.log(`Carregando página adicional ${i + 1} de ${additionalPages}...`);
           await loadNextPage();
           
           // Pausa maior entre carregamentos em segundo plano
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 1500));
         }
         
         console.log('Carregamento em segundo plano concluído!');
@@ -146,14 +170,14 @@ export function useLoadChannels() {
       }
     };
     
-    if (initialLoadDone) {
+    if (initialLoadDone && !backgroundLoadStarted) {
       loadMoreInBackground();
     }
     
     return () => {
       isMounted = false;
     };
-  }, [initialLoadDone, loading, loadNextPage]);
+  }, [initialLoadDone, loading, loadNextPage, movies.length, series.length, live.length, backgroundLoadStarted]);
 
   // Efeito para carregar canais na inicialização
   useEffect(() => {

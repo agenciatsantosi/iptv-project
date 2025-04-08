@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Box,
   Image,
@@ -29,6 +29,7 @@ interface ContentCardProps {
     logo?: string;
     posterUrl?: string;
     thumbnailUrl?: string;
+    backdropUrl?: string;
     type: 'movie' | 'series' | 'live';
     rating?: string | number;
     year?: number | string;
@@ -44,17 +45,29 @@ interface ContentCardProps {
 
 const DEFAULT_POSTER = '/placeholder-poster.jpg';
 
+// Cache local para evitar múltiplas requisições para o mesmo título
+const tmdbImageCache: Record<string, string> = {};
+
 export const ContentCard = React.memo(({ content }: ContentCardProps) => {
   const navigate = useNavigate();
   const { toggleFavorite, favorites } = useIPTVStore();
   const { isAuthenticated } = useAuthContext();
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string>(DEFAULT_POSTER);
   const [isLoading, setIsLoading] = useState(true);
   const [tmdbFallbackTried, setTmdbFallbackTried] = useState(false);
   const toast = useToast();
+  const imageErrorCount = useRef(0);
+  const isMounted = useRef(true);
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const textColor = useColorModeValue('gray.800', 'white');
+
+  // Limpar estado quando o componente for desmontado
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   // Função para tentar diferentes fontes de imagem em ordem
   const getInitialImageUrl = useCallback(() => {
@@ -62,55 +75,117 @@ export const ContentCard = React.memo(({ content }: ContentCardProps) => {
       content.logo,
       content.posterUrl,
       content.thumbnailUrl,
-      content.backdrop
+      content.backdropUrl
     ];
 
-    return possibleSources.find(url => url && typeof url === 'string') || null;
+    // Filtrar apenas URLs válidas
+    const validSources = possibleSources.filter(url => 
+      url && 
+      typeof url === 'string' && 
+      (url.startsWith('http') || url.startsWith('/'))
+    );
+
+    return validSources[0] || DEFAULT_POSTER;
   }, [content]);
 
   // Carregar imagem inicial
   useEffect(() => {
+    // Resetar contadores quando o conteúdo mudar
+    imageErrorCount.current = 0;
+    setTmdbFallbackTried(false);
+    
     const initialUrl = getInitialImageUrl();
-    if (initialUrl) {
-      setImageUrl(initialUrl);
-    } else {
-      handleImageError();
+    setImageUrl(initialUrl);
+    
+    // Se a URL inicial for o poster padrão, tentar TMDB imediatamente
+    if (initialUrl === DEFAULT_POSTER && content.title) {
+      tryTMDBFallback();
     }
   }, [content, getInitialImageUrl]);
 
   // Função para tentar buscar imagem do TMDB
   const tryTMDBFallback = useCallback(async () => {
-    if (tmdbFallbackTried || !content.title) return;
+    if (tmdbFallbackTried || !content.title) {
+      // Se já tentou ou não tem título, usar placeholder diretamente
+      setImageUrl(DEFAULT_POSTER);
+      setIsLoading(false);
+      return;
+    }
     
     setTmdbFallbackTried(true);
     setIsLoading(true);
 
     try {
-      const tmdbUrl = await getMediaImage(content.title, content.type || 'movie');
-      if (tmdbUrl) {
-        setImageUrl(tmdbUrl);
+      // Verificar cache primeiro
+      const cacheKey = `${content.title}-${content.type}`;
+      if (tmdbImageCache[cacheKey]) {
+        setImageUrl(tmdbImageCache[cacheKey]);
         setIsLoading(false);
+        return;
+      }
+      
+      // Mapear o tipo para o formato esperado pelo TMDB
+      // Usar apenas 'movie' ou 'tv' para compatibilidade com a API do TMDB
+      const tmdbType = content.type === 'series' ? 'tv' : 'movie';
+      
+      // Limitar tempo de espera para 5 segundos
+      const timeoutPromise = new Promise<null>((_, reject) => {
+        setTimeout(() => reject(new Error('Timeout ao buscar imagem')), 5000);
+      });
+      
+      // Usar Promise.race para limitar o tempo de espera
+      const tmdbUrl = await Promise.race([
+        getMediaImage(content.title, tmdbType),
+        timeoutPromise
+      ]);
+      
+      // Verificar se o componente ainda está montado
+      if (!isMounted.current) return;
+      
+      if (tmdbUrl) {
+        // Salvar no cache
+        tmdbImageCache[cacheKey] = tmdbUrl;
+        setImageUrl(tmdbUrl);
       } else {
         setImageUrl(DEFAULT_POSTER);
       }
     } catch (error) {
       console.error('Erro ao buscar imagem do TMDB:', error);
+      
+      // Verificar se o componente ainda está montado
+      if (!isMounted.current) return;
+      
       setImageUrl(DEFAULT_POSTER);
     } finally {
-      setIsLoading(false);
+      if (isMounted.current) {
+        setIsLoading(false);
+      }
     }
   }, [content.title, content.type, tmdbFallbackTried]);
 
   const handleImageError = async () => {
-    console.warn('Erro ao carregar imagem:', content.title || content.name || 'Sem título');
+    // Incrementar contador de erros
+    imageErrorCount.current += 1;
     
-    // Se ainda não tentou TMDB, tenta
-    if (!tmdbFallbackTried) {
-      await tryTMDBFallback();
-    } else {
-      // Se já tentou TMDB, usa placeholder
+    // Limitar número de tentativas para evitar loops infinitos
+    if (imageErrorCount.current > 2) {
+      console.warn('Muitas tentativas de carregamento de imagem para:', content.title || content.name || 'Sem título');
       setImageUrl(DEFAULT_POSTER);
       setIsLoading(false);
+      return;
+    }
+    
+    // Evitar log excessivo, apenas registrar o nome do conteúdo
+    console.warn('Erro ao carregar imagem:', content.title || content.name || 'Sem título');
+    
+    // Limitar tentativas de carregamento
+    if (tmdbFallbackTried) {
+      // Se já tentou TMDB, usar placeholder imediatamente
+      setImageUrl(DEFAULT_POSTER);
+      setIsLoading(false);
+    } else {
+      // Tentar TMDB apenas uma vez
+      tryTMDBFallback();
     }
   };
 
@@ -122,34 +197,32 @@ export const ContentCard = React.memo(({ content }: ContentCardProps) => {
     e.stopPropagation();
     if (!isAuthenticated) {
       toast({
-        title: "Login Necessário",
-        description: "Faça login para assistir este conteúdo",
-        status: "warning",
-        duration: 5000,
+        title: 'Acesso restrito',
+        description: 'Você precisa estar logado para assistir',
+        status: 'warning',
+        duration: 3000,
         isClosable: true,
       });
-      navigate('/login');
       return;
     }
-    navigate(`/watch/${content.id}`);
+    navigate(`/watch/${content.type}/${content.id}`);
   };
 
   const handleDetails = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigate(`/content/${content.id}`);
+    navigate(`/${content.type}/${content.id}`);
   };
 
   const handleToggleFavorite = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!isAuthenticated) {
       toast({
-        title: "Login Necessário",
-        description: "Faça login para adicionar aos favoritos",
-        status: "warning",
-        duration: 5000,
+        title: 'Acesso restrito',
+        description: 'Você precisa estar logado para adicionar aos favoritos',
+        status: 'warning',
+        duration: 3000,
         isClosable: true,
       });
-      navigate('/login');
       return;
     }
     toggleFavorite(content.id);
@@ -158,7 +231,7 @@ export const ContentCard = React.memo(({ content }: ContentCardProps) => {
   // Garantir que temos um título
   const title = content.title || content.name || 'Sem título';
 
-  const episodeCount = content.episodes?.length;
+  const episodeCount = content.episodeCount;
   const isSeries = content.type === 'series' && episodeCount;
 
   return (
@@ -266,15 +339,18 @@ export const ContentCard = React.memo(({ content }: ContentCardProps) => {
         left="0"
         right="0"
         p={4}
-        bg="blackAlpha.800"
+        bg="blackAlpha.900"
         align="flex-start"
         spacing={1}
+        borderBottomRadius="lg"
+        boxShadow="0px -4px 6px rgba(0, 0, 0, 0.3)"
       >
         <Text
           color="white"
-          fontSize="sm"
+          fontSize="lg"
           fontWeight="bold"
           noOfLines={2}
+          textShadow="1px 1px 2px rgba(0,0,0,0.8)"
         >
           {title}
         </Text>

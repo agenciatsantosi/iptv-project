@@ -54,16 +54,19 @@ export function IPTVUploader() {
       console.log('Iniciando processamento:', { source, shouldClear });
       setIsProcessing(true);
       setFileError(null);
-      setImportProgress({ stage: 'parsing', progress: 0 });
+      
+      // Já temos progresso de 50% da fase de parsing
+      setImportProgress({ stage: 'parsing', progress: 50 });
 
-      // Processar em lotes menores
-      const BATCH_SIZE = 1000; // Processar 1000 canais por vez
+      // Aumentar o tamanho do lote para arquivos grandes
+      const BATCH_SIZE = 2000; // Processar 2000 canais por vez (aumentado de 1000)
       let processedChannels = 0;
 
       const channels = await importPlaylist(content, (progress) => {
         setImportProgress({
           stage: 'parsing',
-          progress: Math.floor(progress.progress * 0.5) // Primeira metade do progresso
+          progress: 50 + Math.floor(progress.progress * 0.2), // 50% a 70% do progresso
+          detail: progress.detail || 'Processando canais...'
         });
       });
       
@@ -75,7 +78,7 @@ export function IPTVUploader() {
       
       // Limpar lista se necessário
       if (shouldClear) {
-        setImportProgress({ stage: 'processing', progress: 50 });
+        setImportProgress({ stage: 'processing', progress: 70 });
         await clearAll();
       }
 
@@ -86,7 +89,7 @@ export function IPTVUploader() {
         await addChannels(batch, source);
         
         processedChannels += batch.length;
-        const progress = 50 + Math.floor((processedChannels / totalChannels) * 50); // Segunda metade do progresso
+        const progress = 70 + Math.floor((processedChannels / totalChannels) * 30); // 70% a 100% do progresso
         setImportProgress({ 
           stage: 'processing', 
           progress,
@@ -143,6 +146,18 @@ export function IPTVUploader() {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       
+      // Adicionar evento de progresso para arquivos grandes
+      reader.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 25); // 25% do progresso total
+          setImportProgress({ 
+            stage: 'downloading', 
+            progress,
+            detail: `Lendo arquivo: ${(event.loaded / (1024 * 1024)).toFixed(2)}MB de ${(event.total / (1024 * 1024)).toFixed(2)}MB`
+          });
+        }
+      };
+      
       reader.onload = (e) => {
         const content = e.target?.result as string;
         if (!content) {
@@ -156,6 +171,9 @@ export function IPTVUploader() {
           temBOM: content.charCodeAt(0) === 0xFEFF
         });
 
+        // Atualizar progresso
+        setImportProgress({ stage: 'parsing', progress: 30 });
+
         // Verificar BOM e remover se necessário
         const cleanContent = content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
         
@@ -167,6 +185,9 @@ export function IPTVUploader() {
           linha: firstLine,
           bytes: Array.from(firstLine || '').map(c => c.charCodeAt(0))
         });
+
+        // Atualizar progresso
+        setImportProgress({ stage: 'parsing', progress: 40 });
 
         // Se o arquivo começa com #EXTINF, vamos adicionar #EXTM3U
         let processedContent = cleanContent;
@@ -196,6 +217,9 @@ export function IPTVUploader() {
           reject(new Error('O arquivo não contém URLs de canais válidas. Verifique se o arquivo está no formato correto.'));
           return;
         }
+
+        // Atualizar progresso
+        setImportProgress({ stage: 'parsing', progress: 50 });
 
         console.log('Validação do arquivo M3U:', {
           totalLinhas: lines.length,
@@ -244,15 +268,18 @@ export function IPTVUploader() {
         throw new Error('Formato de arquivo inválido. Use apenas arquivos .m3u ou .m3u8');
       }
 
-      const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+      const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
       if (file.size > MAX_FILE_SIZE) {
-        throw new Error(`Arquivo muito grande (${(file.size / (1024 * 1024)).toFixed(2)}MB). Máximo permitido: 100MB`);
+        throw new Error(`Arquivo muito grande (${(file.size / (1024 * 1024)).toFixed(2)}MB). Máximo permitido: 200MB`);
       }
 
       if (file.size === 0) {
         throw new Error('O arquivo está vazio');
       }
 
+      // Mostrar progresso de leitura para arquivos grandes
+      setImportProgress({ stage: 'downloading', progress: 0 });
+      
       const content = await validateM3UFile(file);
       console.log('Arquivo validado, iniciando importação');
       await handleImport(content, file.name);
@@ -262,6 +289,7 @@ export function IPTVUploader() {
       if (fileInput.current) {
         fileInput.current.value = '';
       }
+      setImportProgress(null);
     }
   };
 
@@ -401,7 +429,7 @@ export function IPTVUploader() {
                       </span>
                       <span>{importProgress.progress}%</span>
                     </div>
-                    <ProgressBar value={importProgress.progress} />
+                    <ProgressBar progress={importProgress.progress} />
                     {isProcessing && (
                       <div className="flex justify-center">
                         <LoadingSpinner size="sm" />

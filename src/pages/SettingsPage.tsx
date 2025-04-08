@@ -6,6 +6,7 @@ import { PlayerSettings } from '../components/settings/PlayerSettings';
 import { AppearanceSettings } from '../components/settings/AppearanceSettings';
 import { BannerSettings } from '../components/settings/BannerSettings';
 import { useAuthContext } from '../contexts/AuthContext';
+import { RequireAuth } from '../components/auth/RequireAuth';
 
 export function SettingsPage() {
   const { isAuthenticated } = useAuthContext();
@@ -25,26 +26,30 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-8">Configurações</h1>
-      
+    <RequireAuth>
       <div className="space-y-8">
-        <SettingsSection title="Conta">
-          <AccountSettings />
-        </SettingsSection>
+        <header>
+          <h1 className="text-3xl font-bold">Configurações do Sistema</h1>
+          <p className="text-gray-400 mt-2">
+            Gerencie as configurações da sua aplicação
+          </p>
+        </header>
 
-        <SettingsSection title="Player">
-          <PlayerSettings />
-        </SettingsSection>
-
-        <SettingsSection title="Aparência">
-          <AppearanceSettings />
-        </SettingsSection>
-
-        <SettingsSection title="Banner">
+        <div className="grid gap-8">
           <BannerSettings />
-        </SettingsSection>
+          <SettingsSection title="Conta">
+            <AccountSettings />
+          </SettingsSection>
+
+          <SettingsSection title="Player">
+            <PlayerSettings />
+          </SettingsSection>
+
+          <SettingsSection title="Aparência">
+            <AppearanceSettings />
+          </SettingsSection>
+        </div>
       </div>
-    </div>
+    </RequireAuth>
   );
 }

@@ -6,10 +6,17 @@ import { WatchPage } from '../pages/WatchPage';
 import { SeriesPage } from '../pages/SeriesPage';
 import { MoviesPage } from '../pages/MoviesPage';
 import { LivePage } from '../pages/LivePage';
-import { SearchPage } from '../pages/SearchPage';
 import { ProfilePage } from '../pages/ProfilePage';
+import { SettingsPage } from '../pages/SettingsPage';
 import { SystemSettingsPage } from '../pages/admin/SystemSettingsPage';
 import { AdminIPTVPage } from '../pages/admin/AdminIPTVPage';
+import { AdminPagesPage } from '../pages/admin/AdminPagesPage';
+import { AboutPage } from '../pages/AboutPage';
+import { PrivacyPage } from '../pages/PrivacyPage';
+import { TermsPage } from '../pages/TermsPage';
+import { ContactPage } from '../pages/ContactPage';
+import { HelpPage } from '../pages/HelpPage';
+import { FAQPage } from '../pages/FAQPage';
 import { RequireAuth } from './auth/RequireAuth';
 import { AdminRoute } from './auth/AdminRoute';
 import { Navbar } from './Navbar';
@@ -30,21 +37,30 @@ export function AppContent() {
           <Route path="/series/:id" element={<SeriesPage />} />
           <Route path="/movies" element={<MoviesPage />} />
           <Route path="/live" element={<LivePage />} />
-          <Route path="/search" element={<SearchPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/faq" element={<FAQPage />} />
           
-          <Route element={<RequireAuth />}>
-            <Route path="/profile" element={<ProfilePage />} />
-          </Route>
+          <Route path="/profile" element={
+            <RequireAuth>
+              <ProfilePage />
+            </RequireAuth>
+          } />
 
           <Route element={<AdminRoute />}>
             <Route path="/admin/settings" element={<SystemSettingsPage />} />
             <Route path="/admin/iptv" element={<AdminIPTVPage />} />
+            <Route path="/admin/pages" element={<AdminPagesPage />} />
           </Route>
         </Routes>
       </main>
 
       <Footer />
-      <AuthModal />
+      <AuthModal isOpen={false} onClose={() => {}} />
     </div>
   );
 }

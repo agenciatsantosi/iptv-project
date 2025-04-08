@@ -6,6 +6,22 @@ import { GroupSelector } from '../components/iptv/GroupSelector';
 import { AuthProtection } from '../components/auth/AuthProtection';
 import { useInfiniteChannels } from '../hooks/useInfiniteChannels';
 import { InfiniteScroll } from '../components/shared/InfiniteScroll';
+import { SocialMediaBanner } from '../components/shared/SocialMediaBanner';
+import { Box, Badge } from '@chakra-ui/react';
+
+// Lista completa de todos os grupos de TV ao vivo (sem coletâneas)
+const ALL_LIVE_GROUPS = [
+  "RÁDIOS FM",
+  "Z - CANAIS: ADULTOS",
+  "24 HORAS",
+  "U.S.A",
+  "PPV / ESPORTES",
+  "GLOBO REGIONAIS",
+  "GLOBO CAPITAIS",
+  "PREMIERE",
+  "DISCOVERY",
+  "HBO"
+];
 
 export function LivePage() {
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
@@ -15,7 +31,6 @@ export function LivePage() {
   const { 
     channels: live, 
     isLoading, 
-    error, 
     hasMore, 
     loadMore,
     total,
@@ -30,16 +45,49 @@ export function LivePage() {
 
   // Pega todos os grupos de canais ao vivo
   const groups = useMemo(() => {
+    // Obter grupos únicos dos canais carregados
     const uniqueGroups = new Set(uniqueChannels.map(channel => channel.group_title || 'Sem Grupo'));
-    return Array.from(uniqueGroups).sort();
+    
+    // Filtrar grupos
+    const filteredGroups = Array.from(uniqueGroups).filter(group => {
+      // Se o grupo não tiver nome, mantenha-o
+      if (!group) return true;
+      
+      const upperGroup = group.toUpperCase();
+      
+      // Excluir coletâneas e grupos OND
+      if (upperGroup.includes('COLETÂNEA') || 
+          upperGroup.includes('COLETANEA') || 
+          upperGroup.startsWith('OND /')) {
+        return false;
+      }
+      
+      // Incluir apenas grupos específicos de TV ao vivo
+      return true;
+    });
+    
+    // Combinar grupos fixos com grupos encontrados
+    const combinedGroups = new Set([...ALL_LIVE_GROUPS, ...filteredGroups]);
+    
+    return Array.from(combinedGroups).sort();
   }, [uniqueChannels]);
 
   // Filtra canais pelo grupo selecionado e busca
   const filteredChannels = useMemo(() => {
-    let filtered = selectedGroup 
-      ? uniqueChannels.filter(channel => channel.group_title === selectedGroup)
-      : uniqueChannels;
+    // Primeiro filtrar canais que não são coletâneas
+    let filtered = uniqueChannels.filter(channel => {
+      const group = (channel.group_title || '').toUpperCase();
+      return !group.includes('COLETÂNEA') && 
+             !group.includes('COLETANEA') && 
+             !group.startsWith('OND /');
+    });
     
+    // Depois aplicar filtro de grupo selecionado
+    if (selectedGroup) {
+      filtered = filtered.filter(channel => channel.group_title === selectedGroup);
+    }
+    
+    // Por fim, aplicar filtro de busca
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(channel => 
@@ -70,9 +118,14 @@ export function LivePage() {
                     TV ao Vivo
                   </h1>
                   {!isLoading && (
-                    <p className="text-sm text-white/60">
-                      {total} canais disponíveis
-                    </p>
+                    <div className="flex gap-2 flex-wrap">
+                      <Badge colorScheme="purple" fontSize="sm">
+                        {filteredChannels.length} canais
+                      </Badge>
+                      <Badge colorScheme="green" fontSize="sm">
+                        {groups.length} grupos
+                      </Badge>
+                    </div>
                   )}
                 </div>
               </div>
@@ -116,6 +169,11 @@ export function LivePage() {
               ))}
             </div>
           </InfiniteScroll>
+          
+          {/* Banner de redes sociais */}
+          <Box className="mt-8">
+            <SocialMediaBanner title="Participe das nossas redes sociais" />
+          </Box>
         </div>
       </div>
     </AuthProtection>

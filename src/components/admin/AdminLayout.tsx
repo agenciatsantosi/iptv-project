@@ -69,6 +69,8 @@ export function AdminLayout() {
         { to: '/admin/channels', icon: <Play className="w-5 h-5" />, label: 'Canais' },
         { to: '/admin/categories', icon: <List className="w-5 h-5" />, label: 'Categorias' },
         { to: '/admin/iptv', icon: <Upload className="w-5 h-5" />, label: 'Listas IPTV' },
+        { to: '/admin/pages', icon: <List className="w-5 h-5" />, label: 'Páginas' },
+        { to: '/upload-large-file', icon: <Upload className="w-5 h-5" />, label: 'Upload 200MB' },
         { to: '/admin/content-moderation', icon: <AlertTriangle className="w-5 h-5" />, label: 'Moderação' },
       ]
     },

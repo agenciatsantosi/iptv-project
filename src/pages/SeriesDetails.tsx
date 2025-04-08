@@ -11,7 +11,7 @@ import { IoCheckmarkCircle } from 'react-icons/io5';
 import { ContentReactions } from '../components/ContentReactions';
 import { Channel } from '../types/iptv';
 import { TMDBSeries } from '../types/tmdb';
-import { loadSeriesEpisodes, findSeriesBySlug } from '../services/channel-sync';
+import { findSeriesBySlug, findSeriesEpisodes } from '../services/channel-sync';
 
 type TabType = 'episodes' | 'more' | 'similar';
 
@@ -62,12 +62,12 @@ export function SeriesDetails() {
         setLoading(true);
         console.log('SeriesDetails: Buscando série pelo slug:', slug);
         
-        // Busca a série diretamente do banco de dados
-        const { series: foundSeries, error: seriesError } = await findSeriesBySlug(slug);
+        // Busca a série diretamente do banco de dados usando a nova implementação
+        const foundSeries = await findSeriesBySlug(slug);
         
-        if (seriesError || !foundSeries) {
-          console.error('SeriesDetails: Erro ao buscar série:', seriesError);
-          setError(seriesError || 'Série não encontrada');
+        if (!foundSeries) {
+          console.error('SeriesDetails: Série não encontrada para o slug:', slug);
+          setError('Série não encontrada');
           setLoading(false);
           return;
         }
@@ -78,7 +78,13 @@ export function SeriesDetails() {
         // Carrega os episódios
         const seriesName = foundSeries.title || foundSeries.name;
         console.log('SeriesDetails: Carregando episódios para série:', seriesName);
-        const seriesEpisodes = await loadSeriesEpisodes(seriesName);
+        
+        const { episodes: seriesEpisodes, error: episodesError } = await findSeriesEpisodes(seriesName);
+        
+        if (episodesError) {
+          console.error('SeriesDetails: Erro ao carregar episódios:', episodesError);
+        }
+        
         console.log('SeriesDetails: Episódios carregados:', seriesEpisodes?.length);
         
         if (seriesEpisodes && seriesEpisodes.length > 0) {
@@ -86,9 +92,9 @@ export function SeriesDetails() {
           
           // Identifica as temporadas disponíveis
           const seasons = [...new Set(seriesEpisodes
-            .map(ep => ep.season_number || 1)
+            .map((ep: any) => ep.season_number || 1)
             .filter(Boolean)
-          )].sort((a, b) => a - b);
+          )].sort((a: number, b: number) => a - b);
           
           // Seleciona a primeira temporada por padrão
           if (seasons.length > 0 && selectedSeason === null) {

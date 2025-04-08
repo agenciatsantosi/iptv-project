@@ -32,6 +32,7 @@ import { FavoritesPage } from './pages/FavoritesPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SystemSettingsPage } from './pages/admin/SystemSettingsPage';
 import { AdminIPTVPage } from './pages/admin/AdminIPTVPage';
+import { AdminPagesPage } from './pages/admin/AdminPagesPage';
 import { Toaster } from './components/ui/Toast/Toaster';
 import { PrivateRoute } from './components/auth/PrivateRoute';
 import { AdminRoute } from './components/auth/AdminRoute';
@@ -39,6 +40,13 @@ import { RequireAuth } from './components/auth/RequireAuth';
 import { ContentDetailsPage } from './pages/ContentDetailsPage';
 import { LoginPage } from './pages/LoginPage';
 import { WatchLiveTVPage } from './pages/WatchLiveTVPage';
+import { LargeFileUploadPage } from './pages/LargeFileUploadPage';
+import { AboutPage } from './pages/AboutPage';
+import { PrivacyPage } from './pages/PrivacyPage';
+import { TermsPage } from './pages/TermsPage';
+import { ContactPage } from './pages/ContactPage';
+import { HelpPage } from './pages/HelpPage';
+import { FAQPage } from './pages/FAQPage';
 import theme from './styles/theme';
 import './styles/global.css';
 
@@ -67,6 +75,13 @@ function AppContent() {
           <Route path="/series" element={<SeriesPage />} />
           <Route path="/live" element={<LivePage />} />
           <Route path="/content/:id" element={<ContentDetailsPage />} />
+          <Route path="/upload-large-file" element={<LargeFileUploadPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/faq" element={<FAQPage />} />
           
           {/* Rotas Privadas */}
           <Route path="/tv/watch/:id" element={<PrivateRoute><WatchLiveTVPage /></PrivateRoute>} />
@@ -92,13 +107,14 @@ function AppContent() {
               <Route path="backup" element={<AdminBackup />} />
               <Route path="storage" element={<AdminStorage />} />
               <Route path="iptv" element={<AdminIPTVPage />} />
+              <Route path="pages" element={<AdminPagesPage />} />
             </Route>
           </Route>
         </Routes>
       </main>
 
       <Footer />
-      <AuthModal />
+      <AuthModal isOpen={false} onClose={() => {}} />
     </div>
   );
 }

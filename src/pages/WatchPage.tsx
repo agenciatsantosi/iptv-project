@@ -5,12 +5,15 @@ import axios from 'axios';
 
 import { useIPTVStore } from '../store/iptvStore';
 import { useAuthContext } from '../contexts/AuthContext';
-import { VideoPlayer } from '../components/VideoPlayer/VideoPlayer';
+import VideoPlayer from '../components/VideoPlayer';
+import VODPlayer from '../components/VODPlayer';
 import { useToast } from '../components/ui/Toast/useToast';
 import { loadChannelDetails } from '../services/channel-sync';
 import { Channel } from '../types/iptv';
 
-const PROXY_URL = import.meta.env.VITE_PROXY_URL || 'http://localhost:3001';
+// URLs dos proxies para diferentes tipos de conteúdo
+const LIVE_PROXY_URL = import.meta.env.VITE_LIVE_PROXY_URL || 'http://localhost:3001';
+const VOD_PROXY_URL = import.meta.env.VITE_VOD_PROXY_URL || 'http://localhost:3002';
 
 export function WatchPage() {
   const { id, episodeId } = useParams<{ id: string; episodeId?: string }>();
@@ -20,7 +23,6 @@ export function WatchPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
-  const [channelDetails, setChannelDetails] = useState<Channel | null>(null);
   const { toast } = useToast();
 
   // Obter parâmetros da URL para reprodução direta
@@ -99,10 +101,10 @@ export function WatchPage() {
   }, [item, directItem]);
 
   // Verifica se o proxy está rodando
-  const checkProxy = async () => {
+  const checkProxy = async (proxyUrl: string) => {
     try {
-      console.log('Verificando proxy...');
-      await axios.get(`${PROXY_URL}/health`);
+      console.log(`Verificando proxy em ${proxyUrl}...`);
+      await axios.get(`${proxyUrl}/health`);
       console.log('Proxy está rodando');
       return true;
     } catch (error) {
@@ -120,38 +122,40 @@ export function WatchPage() {
       
       if (error || !channel) {
         console.error('Erro ao carregar detalhes:', error);
-        setError('Erro ao carregar detalhes do canal');
         return null;
       }
-
-      console.log('Detalhes do item:', channel);
-      setChannelDetails(channel);
+      
       return channel;
-    } catch (err) {
-      console.error('Erro ao carregar detalhes:', err);
-      setError('Erro ao carregar detalhes');
+    } catch (error) {
+      console.error('Erro ao carregar detalhes:', error);
       return null;
     }
   };
 
-  // Prepara o vídeo para reprodução
+  // Obtém o stream do proxy
   const prepareVideo = async () => {
     setIsLoading(true);
     setError(null);
 
     try {
+      console.log('Preparando vídeo...');
+      
+      // Determina qual proxy usar com base no tipo de conteúdo
+      const isLiveContent = displayItem?.type === 'live';
+      const proxyUrl = isLiveContent ? LIVE_PROXY_URL : VOD_PROXY_URL;
+      
+      console.log(`Usando proxy ${isLiveContent ? 'LIVE' : 'VOD'}: ${proxyUrl}`);
+      
       // Verifica se o proxy está rodando
-      console.log('Verificando proxy...');
-      const proxyRunning = await checkProxy();
-      console.log('Proxy está rodando');
+      const proxyRunning = await checkProxy(proxyUrl);
 
       if (!proxyRunning) {
         toast({
           variant: "destructive",
           title: "Erro no servidor",
-          description: "O servidor de streaming não está respondendo. Tente novamente."
+          description: `O servidor de streaming ${isLiveContent ? 'ao vivo' : 'de filmes e séries'} não está respondendo.`
         });
-        setError('Servidor de streaming não disponível');
+        setError(`Servidor de streaming ${isLiveContent ? 'ao vivo' : 'de filmes e séries'} não disponível`);
         setIsLoading(false);
         return;
       }
@@ -171,7 +175,7 @@ export function WatchPage() {
         }
 
         // Busca o episódio específico
-        const episode = channel.episodes?.find(ep => ep.id === episodeId);
+        const episode = channel.episodes?.find((ep: any) => ep.id === episodeId);
         if (!episode) {
           throw new Error('Episódio não encontrado');
         }
@@ -186,70 +190,87 @@ export function WatchPage() {
           throw new Error('URL do episódio não encontrada');
         }
 
-        setVideoUrl(episode.url);
+        // Usar proxy para streaming de episódios (VOD)
+        const streamUrl = `${VOD_PROXY_URL}/stream?url=${encodeURIComponent(episode.url)}`;
+        console.log('URL do proxy (VOD):', streamUrl);
+        setVideoUrl(streamUrl);
       } else {
         // Tenta diferentes propriedades para a URL
         const streamUrl = channel.url || channel.stream_url;
         console.log('Tentando obter URL:', {
-          url: channel.url,
-          stream_url: channel.stream_url,
-          final_url: streamUrl
+          channelUrl: channel.url,
+          streamUrl: channel.stream_url,
+          finalUrl: streamUrl
         });
 
         if (!streamUrl) {
-          throw new Error('URL do vídeo não encontrada');
+          console.warn('URL do canal não encontrada, usando URL de teste');
+          // Usar proxy adequado para o tipo de conteúdo
+          const testUrl = isLiveContent 
+            ? `${LIVE_PROXY_URL}/stream?url=${encodeURIComponent('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8')}`
+            : `${VOD_PROXY_URL}/stream?url=${encodeURIComponent('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8')}`;
+          setVideoUrl(testUrl);
+        } else {
+          // Usar proxy apropriado com base no tipo de conteúdo
+          const streamProxyUrl = isLiveContent 
+            ? `${LIVE_PROXY_URL}/stream?url=${encodeURIComponent(streamUrl)}`
+            : `${VOD_PROXY_URL}/stream?url=${encodeURIComponent(streamUrl)}`;
+          console.log(`URL do proxy (${isLiveContent ? 'LIVE' : 'VOD'}):`, streamProxyUrl);
+          setVideoUrl(streamProxyUrl);
         }
-
-        console.log('Preparando vídeo:', {
-          id: channel.id,
-          name: channel.name || channel.title,
-          url: streamUrl
-        });
-
-        setVideoUrl(streamUrl);
       }
-
+      
       setIsLoading(false);
-    } catch (err) {
-      console.error('Erro ao preparar vídeo:', err);
-      setError(err instanceof Error ? err.message : 'Erro ao preparar vídeo');
+    } catch (error) {
+      console.error('Erro ao preparar vídeo:', error);
+      setError(error instanceof Error ? error.message : 'Erro desconhecido');
       setIsLoading(false);
     }
   };
 
+  // Efeito para preparar o vídeo quando o item mudar
   useEffect(() => {
     if (!isAuthenticated) {
-      navigate('/login', { 
-        state: { from: `/watch/${id}${episodeId ? `/${episodeId}` : ''}` }
-      });
+      navigate('/login', { replace: true });
       return;
     }
 
-    if (!displayItem && !isDirectMode) {
-      setError('Conteúdo não encontrado');
-      setIsLoading(false);
-      return;
-    }
+    prepareVideo();
+  }, [displayItem, isAuthenticated, navigate]);
 
-    if (isDirectMode) {
-      setVideoUrl(directUrl);
-      setIsLoading(false);
-    } else {
-      prepareVideo();
-    }
-  }, [isAuthenticated, displayItem, id, episodeId, navigate, isDirectMode, directUrl]);
-
-  if (!isAuthenticated) {
-    return null;
-  }
-
-  if (!displayItem && !isDirectMode || error) {
+  // Renderiza mensagem de erro
+  if (error) {
     return (
-      <div className="min-h-screen bg-zinc-900 flex items-center justify-center">
-        <div className="text-center text-white">
-          <h2 className="text-xl font-semibold mb-4">
-            {error || 'Conteúdo não encontrado'}
-          </h2>
+      <div className="min-h-screen bg-zinc-900 flex flex-col items-center justify-center p-4">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              className="h-8 w-8 text-white" 
+              fill="none" 
+              viewBox="0 0 24 24" 
+              stroke="currentColor"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2} 
+                d="M6 18L18 6M6 6l12 12" 
+              />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Erro ao carregar vídeo</h2>
+          <p className="text-white/70 mb-6">{error}</p>
+          <button
+            onClick={() => {
+              setError(null);
+              prepareVideo();
+            }}
+            className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition mb-4"
+          >
+            Tentar novamente
+          </button>
+          <br />
           <Link
             to="/"
             className="inline-flex items-center gap-2 text-purple-500 hover:text-purple-400"
@@ -287,19 +308,30 @@ export function WatchPage() {
         </div>
 
         <div className="aspect-video bg-black rounded-lg overflow-hidden">
-          <VideoPlayer
-            id={id || ''}
-            url={videoUrl}
-            title={displayItem?.name || displayItem?.title || title || ''}
-            type={displayItem?.type}
-            episodeId={episodeId}
-            seasonNumber={displayItem?.type === 'series' ? displayItem?.episodes?.find((ep: any) => ep.id === episodeId)?.season : undefined}
-            autoPlay={true}
-            onError={(error) => {
-              console.error('Erro no player:', error);
-              setError('Erro ao reproduzir vídeo');
-            }}
-          />
+          {displayItem?.type === 'live' ? (
+            <VideoPlayer
+              url={videoUrl}
+              title={displayItem?.name || displayItem?.title || title || ''}
+              poster={(displayItem as any)?.logo || (displayItem as any)?.poster}
+              autoPlay={true}
+              controls={true}
+              muted={false}
+              onError={(error: Error) => {
+                console.error('Erro no player de TV:', error);
+                setError('Erro ao reproduzir TV ao vivo');
+              }}
+            />
+          ) : (
+            <VODPlayer
+              url={videoUrl}
+              title={displayItem?.name || displayItem?.title || title || ''}
+              poster={(displayItem as any)?.logo || (displayItem as any)?.poster}
+              onError={(error: Error) => {
+                console.error('Erro no player VOD:', error);
+                setError('Erro ao reproduzir vídeo');
+              }}
+            />
+          )}
         </div>
 
         <div className="mt-4">
@@ -308,7 +340,7 @@ export function WatchPage() {
           </h1>
           {displayItem?.type === 'series' && episodeId && (
             <p className="text-white/70 mt-1">
-              {displayItem?.episodes?.find(ep => ep.id === episodeId)?.title || 'Episódio não encontrado'}
+              {displayItem?.episodes?.find((ep: any) => ep.id === episodeId)?.title || 'Episódio não encontrado'}
             </p>
           )}
           {displayItem?.group_title && (

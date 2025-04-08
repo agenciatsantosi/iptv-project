@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../contexts/AuthContext';
-import { Shield, Users } from 'lucide-react';
+import { Shield, Users, Share2 } from 'lucide-react';
 import { SystemSettings } from '../components/admin/SystemSettings';
+import { SocialMediaManager } from '../components/admin/SocialMediaManager';
 
 const AdminPage = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated, loading } = useAuthContext();
-  const [activeSection, setActiveSection] = useState<'users' | 'settings'>('users');
+  const [activeSection, setActiveSection] = useState<'users' | 'settings' | 'social'>('users');
   const [users, setUsers] = useState<any[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +69,7 @@ const AdminPage = () => {
     <div className="container mx-auto p-6">
       <h1 className="text-2xl font-bold mb-6">Painel de Administração</h1>
       
-      <div className="flex gap-4 mb-6">
+      <div className="flex gap-4 mb-6 flex-wrap">
         <button
           onClick={() => setActiveSection('users')}
           className={`px-4 py-2 rounded flex items-center gap-2 ${
@@ -77,6 +78,15 @@ const AdminPage = () => {
         >
           <Users className="w-5 h-5" />
           Usuários
+        </button>
+        <button
+          onClick={() => setActiveSection('social')}
+          className={`px-4 py-2 rounded flex items-center gap-2 ${
+            activeSection === 'social' ? 'bg-purple-600 text-white' : 'bg-gray-700'
+          }`}
+        >
+          <Share2 className="w-5 h-5" />
+          Redes Sociais
         </button>
         <button
           onClick={() => setActiveSection('settings')}
@@ -114,6 +124,10 @@ const AdminPage = () => {
               </div>
             )}
           </div>
+        )}
+
+        {activeSection === 'social' && (
+          <SocialMediaManager />
         )}
 
         {activeSection === 'settings' && (

@@ -107,3 +107,74 @@
     padding: 5px;
   }
 }
+
+/* Estilos para o overlay de erro */
+.error-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.error-message {
+  background-color: #1f1f1f;
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 80%;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.error-message h3 {
+  color: #ff3d71;
+  margin-bottom: 12px;
+  font-size: 1.2rem;
+}
+
+.error-message p {
+  color: #fff;
+  margin-bottom: 20px;
+  font-size: 0.9rem;
+}
+
+.retry-button {
+  background-color: #ff3d71;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.retry-button:hover {
+  background-color: #ff1f5a;
+}
+
+/* Estilos para dispositivos móveis */
+@media (max-width: 768px) {
+  .error-message {
+    padding: 16px;
+    max-width: 90%;
+  }
+  
+  .error-message h3 {
+    font-size: 1rem;
+  }
+  
+  .error-message p {
+    font-size: 0.8rem;
+  }
+  
+  .retry-button {
+    padding: 6px 12px;
+    font-size: 0.9rem;
+  }
+}
