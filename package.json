@@ -11,6 +11,7 @@
     "dev:playlist": "tsx watch src/server/playlist-proxy.ts",
     "dev:proxies": "tsx watch src/server/start-proxies.ts",
     "build": "tsc && vite build",
+    "vercel-build": "npm run build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "proxy:vod": "node src/server/vod-proxy.js",

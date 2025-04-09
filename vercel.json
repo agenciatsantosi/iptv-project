@@ -3,17 +3,21 @@
   "builds": [
     {
       "src": "package.json",
-      "use": "@vercel/node"
+      "use": "@vercel/static-build",
+      "config": {
+        "buildCommand": "npm run build",
+        "outputDirectory": "dist"
+      }
     },
     {
-      "src": "proxy-server/**/*.js",
+      "src": "proxy-server/api/**/*.ts",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/api/content/(.*)",
-      "dest": "/proxy-server/content/$1",
+      "dest": "/proxy-server/api/content/$1",
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -30,7 +34,7 @@
     },
     {
       "src": "/api/stream/(.*)",
-      "dest": "/proxy-server/stream/$1",
+      "dest": "/proxy-server/api/stream/$1",
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -66,16 +70,11 @@
       "continue": true
     },
     {
+      "handle": "filesystem"
+    },
+    {
       "src": "/(.*)",
-      "dest": "/$1",
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "*",
-        "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "DENY",
-        "Referrer-Policy": "strict-origin-when-cross-origin"
-      }
+      "dest": "/index.html"
     }
   ],
   "env": {
