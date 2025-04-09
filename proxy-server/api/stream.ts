@@ -1,154 +1,128 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import axios from 'axios';
-import { URL } from 'url';
-import * as http from 'http';
-import * as https from 'https';
+import { createHash } from 'crypto';
 
-// Função para extrair credenciais da URL
-function extractCredentials(url: string) {
-  const match = url.match(/\/(\d+)\/(\d+)\//);
-  return match ? { username: match[1], password: match[2] } : null;
+// Cache para armazenar informações das streams
+const streamCache = new Map<string, {
+  url: string;
+  lastAccessed: number;
+  headers?: Record<string, string>;
+}>();
+
+// Limpa o cache periodicamente (a cada 1 hora)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of streamCache.entries()) {
+    if (now - value.lastAccessed > 3600000) { // 1 hora
+      streamCache.delete(key);
+    }
+  }
+}, 3600000);
+
+// Função para gerar um ID único para a stream
+function generateStreamId(url: string): string {
+  return createHash('md5').update(url).digest('hex');
 }
 
-// Cache para armazenar headers de resposta
-const responseHeadersCache = new Map();
-
-// Agentes HTTP/HTTPS com timeouts e keep-alive otimizados
-const httpAgent = new http.Agent({
-  keepAlive: true,
-  keepAliveMsecs: 1000,
-  maxSockets: 100,
-  timeout: 60000,
-});
-
-const httpsAgent = new https.Agent({
-  keepAlive: true,
-  keepAliveMsecs: 1000,
-  maxSockets: 100,
-  timeout: 60000,
-  rejectUnauthorized: false
-});
-
-// Função para otimizar headers de resposta
-function optimizeResponseHeaders(headers: any, url: string) {
-  const cachedHeaders = responseHeadersCache.get(url);
-  if (cachedHeaders) {
-    return cachedHeaders;
+// Função para validar a URL
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
   }
-
-  const optimizedHeaders = {
-    'Content-Type': headers['content-type'] || 'application/octet-stream',
-    'Content-Length': headers['content-length'],
-    'Accept-Ranges': 'bytes',
-    'Content-Range': headers['content-range'],
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': '*',
-    'Cross-Origin-Resource-Policy': 'cross-origin',
-    'Cache-Control': 'public, max-age=31536000',
-    'Transfer-Encoding': 'chunked',
-    'Connection': 'keep-alive'
-  };
-
-  responseHeadersCache.set(url, optimizedHeaders);
-  return optimizedHeaders;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Otimização para CORS preflight
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', '*');
-    res.setHeader('Access-Control-Max-Age', '86400');
-    return res.status(200).end();
-  }
+  // Habilitar CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range, Authorization');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
 
-  const { url } = req.query;
-  
-  if (!url || typeof url !== 'string') {
-    return res.status(400).json({ error: 'URL é obrigatória' });
+  // Responder a requisições OPTIONS
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
   }
 
   try {
-    const decodedUrl = decodeURIComponent(url);
-    const credentials = extractCredentials(decodedUrl);
-    const urlObj = new URL(decodedUrl);
-    
-    const headers = {
-      'User-Agent': 'VLC/3.0.8 LibVLC/3.0.8',
-      'Accept': '*/*',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept-Encoding': 'gzip, deflate',
-      'Connection': 'keep-alive',
-      'Cache-Control': 'no-cache',
-      'Range': req.headers.range || 'bytes=0-',
-      'Host': urlObj.host
-    };
+    const { url, type = 'video' } = req.query;
 
-    if (credentials) {
-      headers['Authorization'] = 'Basic ' + Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64');
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'URL é obrigatória' });
     }
 
-    const requestOptions = {
-      method: 'GET',
-      url: decodedUrl,
-      headers,
-      responseType: 'stream' as const,
-      maxRedirects: 10,
-      timeout: 60000,
-      httpAgent,
-      httpsAgent,
-      decompress: true,
-      validateStatus: (status: number) => status >= 200 && status < 500
-    };
+    if (!isValidUrl(url)) {
+      return res.status(400).json({ error: 'URL inválida' });
+    }
 
-    const response = await axios(requestOptions);
-    
-    // Otimiza os headers de resposta
-    const responseHeaders = optimizeResponseHeaders(response.headers, decodedUrl);
-    res.writeHead(response.status || 200, responseHeaders);
+    const streamId = generateStreamId(url);
 
-    // Configura o streaming otimizado
-    const stream = response.data;
-    
-    // Configura buffer de alta performance
-    stream.on('data', (chunk: Buffer) => {
-      if (!res.write(chunk)) {
-        stream.pause();
+    // Verificar se já temos informações dessa stream no cache
+    const cachedStream = streamCache.get(streamId);
+    if (cachedStream) {
+      cachedStream.lastAccessed = Date.now();
+      
+      // Se for uma requisição de range, fazer proxy direto
+      if (req.headers.range) {
+        const response = await axios({
+          method: 'GET',
+          url: cachedStream.url,
+          headers: {
+            ...req.headers,
+            host: new URL(cachedStream.url).host
+          },
+          responseType: 'stream'
+        });
+
+        res.setHeader('Content-Type', response.headers['content-type'] || 'video/mp4');
+        res.setHeader('Content-Length', response.headers['content-length']);
+        res.setHeader('Content-Range', response.headers['content-range']);
+        res.setHeader('Accept-Ranges', 'bytes');
+        
+        return response.data.pipe(res);
       }
-    });
 
-    stream.on('end', () => {
-      res.end();
-    });
-
-    res.on('drain', () => {
-      stream.resume();
-    });
-
-    // Tratamento de erros otimizado
-    stream.on('error', (error: Error) => {
-      console.error('Erro no stream:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Erro no stream de dados' });
-      }
-      stream.destroy();
-    });
-
-    req.on('close', () => {
-      stream.destroy();
-      responseHeadersCache.delete(decodedUrl);
-    });
-
-  } catch (error: any) {
-    console.error('Erro no proxy:', error);
-    if (!res.headersSent) {
-      res.status(500).json({
-        error: 'Erro ao processar stream',
-        details: error.message,
-        url: decodeURIComponent(url)
+      return res.json({
+        streamId,
+        url: cachedStream.url,
+        type
       });
     }
+
+    // Fazer a primeira requisição para obter informações do stream
+    const response = await axios({
+      method: 'HEAD',
+      url: url,
+      timeout: 5000,
+      maxRedirects: 5
+    });
+
+    // Armazenar no cache
+    streamCache.set(streamId, {
+      url: url,
+      lastAccessed: Date.now(),
+      headers: response.headers as Record<string, string>
+    });
+
+    // Retornar informações do stream
+    return res.json({
+      streamId,
+      url: url,
+      type,
+      headers: {
+        'Content-Type': response.headers['content-type'],
+        'Content-Length': response.headers['content-length']
+      }
+    });
+
+  } catch (error) {
+    console.error('Erro no servidor de streaming:', error);
+    return res.status(500).json({
+      error: 'Erro ao processar stream',
+      details: error instanceof Error ? error.message : 'Erro desconhecido'
+    });
   }
 } 

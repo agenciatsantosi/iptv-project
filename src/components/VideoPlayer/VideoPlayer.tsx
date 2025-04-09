@@ -21,198 +21,141 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 3;
-  const [playbackMethod, setPlaybackMethod] = useState<'hls' | 'direct' | null>(null);
-  const mountedRef = useRef(true);
-  const playbackTimeoutRef = useRef<NodeJS.Timeout>();
 
   useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      if (playbackTimeoutRef.current) {
-        clearTimeout(playbackTimeoutRef.current);
-      }
-    };
-  }, []);
+    const initializePlayer = async () => {
+      if (!videoRef.current || !url) return;
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !url) return;
+      try {
+        setIsLoading(true);
+        setError(null);
 
-    console.log('[VideoPlayer] Iniciando player com URL:', url);
-    setIsLoading(true);
-    setError(null);
-
-    // Função para limpar o HLS
-    const destroyHls = () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-    };
-
-    // Função para verificar se o vídeo está realmente reproduzindo
-    const checkVideoPlayback = () => {
-      if (!video.videoWidth || !video.videoHeight) {
-        console.log('[VideoPlayer] Stream sem vídeo detectado');
-        setError('Não foi possível carregar o vídeo');
-      } else {
-        console.log('[VideoPlayer] Dimensões do vídeo:', video.videoWidth, 'x', video.videoHeight);
-      }
-    };
-
-    // Função para tentar recuperar de erros
-    const retryLoad = () => {
-      if (retryCount < maxRetries) {
-        console.log(`[VideoPlayer] Tentativa ${retryCount + 1} de ${maxRetries}`);
-        setRetryCount(prev => prev + 1);
-        initializePlayer();
-      } else {
-        console.log('[VideoPlayer] Número máximo de tentativas atingido');
-        setError('Não foi possível carregar o vídeo após várias tentativas');
-      }
-    };
-
-    // Função para iniciar a reprodução com delay
-    const startPlayback = () => {
-      if (autoPlay && mountedRef.current) {
-        if (playbackTimeoutRef.current) {
-          clearTimeout(playbackTimeoutRef.current);
+        // Construir URL do proxy
+        const proxyUrl = new URL('/api/stream', window.location.origin);
+        proxyUrl.searchParams.set('url', url);
+        
+        // Fazer a requisição inicial para obter informações do stream
+        const response = await fetch(proxyUrl.toString());
+        if (!response.ok) {
+          throw new Error('Erro ao inicializar stream');
         }
 
-        playbackTimeoutRef.current = setTimeout(() => {
-          if (!mountedRef.current) return;
-          
-          video.play().catch(err => {
-            console.error('[VideoPlayer] Erro ao iniciar reprodução:', err);
-            retryLoad();
-          });
+        const data = await response.json();
+        const streamUrl = data.url;
 
-          // Verifica se o vídeo está realmente reproduzindo após um tempo
-          setTimeout(checkVideoPlayback, 5000);
-        }, 1000);
-      }
-    };
+        // Limpar instância anterior do HLS se existir
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
 
-    // Inicializa o player direto
-    const initializeDirectPlayer = () => {
-      console.log('[VideoPlayer] Inicializando player direto');
-      destroyHls();
-      
-      // Força o recarregamento do elemento de vídeo
-      video.pause();
-      video.removeAttribute('src');
-      video.load();
-      
-      // Define os atributos do vídeo
-      video.preload = 'auto';
-      video.crossOrigin = 'anonymous';
-      video.src = url;
-      
-      // Força o carregamento
-      video.load();
-      
-      // Inicia a reprodução após um delay
-      startPlayback();
-    };
+        // Verificar se é um stream HLS
+        if (streamUrl.includes('.m3u8')) {
+          if (Hls.isSupported()) {
+            const hls = new Hls({
+              maxBufferLength: 30,
+              maxMaxBufferLength: 60,
+              maxBufferSize: 60 * 1000 * 1000, // 60MB
+              maxBufferHole: 0.5,
+              lowLatencyMode: true,
+              backBufferLength: 90
+            });
 
-    // Inicializa o player
-    const initializePlayer = () => {
-      initializeDirectPlayer();
-    };
+            hls.attachMedia(videoRef.current);
+            hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+              hls.loadSource(streamUrl);
+            });
 
-    // Event listeners para o vídeo
-    const handleLoadStart = () => {
-      console.log('[VideoPlayer] Iniciando carregamento');
-      setIsLoading(true);
-    };
+            hls.on(Hls.Events.ERROR, (event, data) => {
+              if (data.fatal) {
+                switch (data.type) {
+                  case Hls.ErrorTypes.NETWORK_ERROR:
+                    console.error('Network error:', data);
+                    hls.startLoad();
+                    break;
+                  case Hls.ErrorTypes.MEDIA_ERROR:
+                    console.error('Media error:', data);
+                    hls.recoverMediaError();
+                    break;
+                  default:
+                    console.error('Fatal error:', data);
+                    setError('Erro fatal ao carregar vídeo');
+                    break;
+                }
+              }
+            });
 
-    const handleCanPlay = () => {
-      console.log('[VideoPlayer] Vídeo pode ser reproduzido');
-      setIsLoading(false);
-    };
+            hlsRef.current = hls;
+          } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+            // Fallback para Safari
+            videoRef.current.src = streamUrl;
+          }
+        } else {
+          // Stream direto
+          videoRef.current.src = streamUrl;
+        }
 
-    const handleLoadedMetadata = () => {
-      console.log('[VideoPlayer] Metadados carregados:', {
-        width: video.videoWidth,
-        height: video.videoHeight,
-        duration: video.duration
-      });
-    };
+        // Configurar eventos do vídeo
+        videoRef.current.oncanplay = () => {
+          setIsLoading(false);
+          if (autoPlay) {
+            videoRef.current?.play().catch(console.error);
+          }
+        };
 
-    const handleTimeUpdate = () => {
-      if (video.currentTime > 0) {
-        console.log('[VideoPlayer] Tempo atual:', video.currentTime);
-      }
-    };
+        videoRef.current.onerror = (e) => {
+          console.error('Video error:', e);
+          if (retryCount < maxRetries) {
+            setRetryCount(prev => prev + 1);
+            initializePlayer();
+          } else {
+            setError('Erro ao carregar vídeo após várias tentativas');
+          }
+        };
 
-    const handleError = (e: Event) => {
-      const videoError = (e.target as HTMLVideoElement).error;
-      console.error('[VideoPlayer] Erro no vídeo:', videoError);
-      
-      if (videoError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-        console.log('[VideoPlayer] Formato não suportado');
-        setError('Formato de vídeo não suportado');
-      } else {
-        setError(videoError?.message || 'Erro ao carregar vídeo');
+      } catch (err) {
+        console.error('Error initializing player:', err);
+        setError('Erro ao inicializar player');
         setIsLoading(false);
-        retryLoad();
       }
     };
 
-    video.addEventListener('loadstart', handleLoadStart);
-    video.addEventListener('canplay', handleCanPlay);
-    video.addEventListener('loadedmetadata', handleLoadedMetadata);
-    video.addEventListener('timeupdate', handleTimeUpdate);
-    video.addEventListener('error', handleError);
-
-    // Iniciar o player
     initializePlayer();
 
     return () => {
-      if (playbackTimeoutRef.current) {
-        clearTimeout(playbackTimeoutRef.current);
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
       }
-      setRetryCount(0);
-      video.removeEventListener('loadstart', handleLoadStart);
-      video.removeEventListener('canplay', handleCanPlay);
-      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      video.removeEventListener('timeupdate', handleTimeUpdate);
-      video.removeEventListener('error', handleError);
-      destroyHls();
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.src = '';
+        videoRef.current.load();
+      }
     };
   }, [url, autoPlay, retryCount]);
 
   return (
     <div className="video-player-container">
-      <video
-        ref={videoRef}
-        className="video-player"
-        controls={controls}
-        muted={muted}
-        playsInline
-        crossOrigin="anonymous"
-      />
-      {isLoading && !error && (
+      {isLoading && (
         <div className="loading-overlay">
           <div className="loading-spinner"></div>
-          <div className="loading-text">
-            Carregando vídeo...
-            {retryCount > 0 && ` (Tentativa ${retryCount}/${maxRetries})`}
-            {playbackMethod && ` (${playbackMethod === 'hls' ? 'HLS' : 'Direto'})`}
-          </div>
         </div>
       )}
       {error && (
         <div className="error-overlay">
           <div className="error-message">{error}</div>
-          {retryCount < maxRetries && (
-            <button onClick={() => setRetryCount(prev => prev + 1)}>
-              Tentar Novamente
-            </button>
-          )}
+          <button onClick={() => setRetryCount(0)} className="retry-button">
+            Tentar novamente
+          </button>
         </div>
       )}
+      <video
+        ref={videoRef}
+        controls={controls}
+        muted={muted}
+        playsInline
+        className="video-player"
+      />
     </div>
   );
 };
