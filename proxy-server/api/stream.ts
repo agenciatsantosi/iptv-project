@@ -1,6 +1,22 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import axios from 'axios';
-import { createHash } from 'crypto';
+import axiosRetry from 'axios-retry';
+
+// Configurar retry para requisições
+const client = axios.create({
+  timeout: 30000,
+  maxRedirects: 5
+});
+
+axiosRetry(client, { 
+  retries: 3,
+  retryDelay: axiosRetry.exponentialDelay,
+  retryCondition: (error) => {
+    return axiosRetry.isNetworkOrIdempotentRequestError(error) || 
+           error.code === 'ECONNRESET' ||
+           error.code === 'ETIMEDOUT';
+  }
+});
 
 // Cache para armazenar informações das streams
 const streamCache = new Map<string, {
@@ -35,94 +51,113 @@ function isValidUrl(url: string): boolean {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Habilitar CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range, Authorization');
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
-
-  // Responder a requisições OPTIONS
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-
   try {
-    const { url, type = 'video' } = req.query;
+    const { url } = req.query;
 
     if (!url || typeof url !== 'string') {
-      return res.status(400).json({ error: 'URL é obrigatória' });
+      return res.status(400).json({ error: 'URL parameter is required' });
     }
 
-    if (!isValidUrl(url)) {
-      return res.status(400).json({ error: 'URL inválida' });
+    // Forçar HTTPS
+    const secureUrl = url.replace(/^http:/, 'https:');
+
+    // Verificar se a URL é válida
+    try {
+      new URL(secureUrl);
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid URL provided' });
     }
 
-    const streamId = generateStreamId(url);
+    console.log('Fetching stream from:', secureUrl);
 
-    // Verificar se já temos informações dessa stream no cache
-    const cachedStream = streamCache.get(streamId);
-    if (cachedStream) {
-      cachedStream.lastAccessed = Date.now();
-      
-      // Se for uma requisição de range, fazer proxy direto
-      if (req.headers.range) {
-        const response = await axios({
-          method: 'GET',
-          url: cachedStream.url,
-          headers: {
-            ...req.headers,
-            host: new URL(cachedStream.url).host
-          },
-          responseType: 'stream'
-        });
-
-        res.setHeader('Content-Type', response.headers['content-type'] || 'video/mp4');
-        res.setHeader('Content-Length', response.headers['content-length']);
-        res.setHeader('Content-Range', response.headers['content-range']);
-        res.setHeader('Accept-Ranges', 'bytes');
-        
-        return response.data.pipe(res);
-      }
-
-      return res.json({
-        streamId,
-        url: cachedStream.url,
-        type
-      });
-    }
-
-    // Fazer a primeira requisição para obter informações do stream
-    const response = await axios({
-      method: 'HEAD',
-      url: url,
-      timeout: 5000,
-      maxRedirects: 5
-    });
-
-    // Armazenar no cache
-    streamCache.set(streamId, {
-      url: url,
-      lastAccessed: Date.now(),
-      headers: response.headers as Record<string, string>
-    });
-
-    // Retornar informações do stream
-    return res.json({
-      streamId,
-      url: url,
-      type,
+    const response = await client.get(secureUrl, {
+      responseType: 'stream',
       headers: {
-        'Content-Type': response.headers['content-type'],
-        'Content-Length': response.headers['content-length']
+        ...req.headers,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'cross-site'
+      },
+      validateStatus: function (status) {
+        return status >= 200 && status < 500;
       }
+    });
+
+    // Configurar headers de CORS e cache
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range, Authorization');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+
+    // Copiar headers relevantes da resposta
+    const relevantHeaders = [
+      'content-type',
+      'content-length',
+      'content-range',
+      'accept-ranges'
+    ];
+
+    relevantHeaders.forEach(header => {
+      const value = response.headers[header];
+      if (value) {
+        res.setHeader(header, value);
+      }
+    });
+
+    // Definir status code
+    res.status(response.status);
+
+    // Pipe do stream
+    return new Promise((resolve, reject) => {
+      response.data.on('error', (error: Error) => {
+        console.error('Stream error:', error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Stream error occurred' });
+        }
+        reject(error);
+      });
+
+      response.data.pipe(res);
+
+      response.data.on('end', () => {
+        resolve(undefined);
+      });
+
+      // Tratar desconexão do cliente
+      req.on('close', () => {
+        response.data.destroy();
+        resolve(undefined);
+      });
     });
 
   } catch (error) {
-    console.error('Erro no servidor de streaming:', error);
-    return res.status(500).json({
-      error: 'Erro ao processar stream',
-      details: error instanceof Error ? error.message : 'Erro desconhecido'
-    });
+    console.error('Proxy error:', error);
+    
+    if (!res.headersSent) {
+      if (axios.isAxiosError(error)) {
+        if (error.response) {
+          return res.status(error.response.status).json({
+            error: `Upstream server error: ${error.response.status}`,
+            details: error.message
+          });
+        } else if (error.request) {
+          return res.status(502).json({
+            error: 'Network error',
+            details: error.message
+          });
+        }
+      }
+      
+      return res.status(500).json({
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
   }
 } 

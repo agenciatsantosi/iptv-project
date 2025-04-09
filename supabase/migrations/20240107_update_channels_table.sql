@@ -32,10 +32,10 @@ CREATE INDEX channels_group_name_idx ON channels(group_name);
 -- Add RLS (Row Level Security) policies
 ALTER TABLE channels ENABLE ROW LEVEL SECURITY;
 
--- Policy to allow users to see only their own channels
-CREATE POLICY "Users can view their own channels"
+-- Policy to allow public read access to all channels
+CREATE POLICY "Public channels are viewable by everyone"
     ON channels FOR SELECT
-    USING (auth.uid() = user_id);
+    USING (true);
 
 -- Policy to allow users to insert their own channels
 CREATE POLICY "Users can insert their own channels"
@@ -52,3 +52,18 @@ CREATE POLICY "Users can update their own channels"
 CREATE POLICY "Users can delete their own channels"
     ON channels FOR DELETE
     USING (auth.uid() = user_id);
+
+-- Create function to handle channel updates
+CREATE OR REPLACE FUNCTION handle_channel_updated()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create trigger for channel updates
+CREATE TRIGGER on_channel_updated
+    BEFORE UPDATE ON channels
+    FOR EACH ROW
+    EXECUTE FUNCTION handle_channel_updated();
